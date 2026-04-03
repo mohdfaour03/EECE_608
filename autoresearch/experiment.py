@@ -1,6 +1,8 @@
 """Agent sandbox — experiment.py
 Best approach so far: negative_loss scoring, budget=128 per seed, 3 seeds.
-Point estimate tightness_ratio ~17%. Conservative still 0 — needs stronger attack."""
+Point estimate tightness_ratio ~17%. Conservative still 0 — needs stronger attack.
+
+Now also reports GDP-based epsilon alongside Wilson CI for comparison."""
 from __future__ import annotations
 import random, time, sys
 from pathlib import Path
@@ -10,8 +12,8 @@ import prepare
 import torch
 import torch.nn.functional as F
 
-QUERY_BUDGET = 128
-SEEDS = [401, 402, 403]
+QUERY_BUDGET = 256
+SEEDS = [401, 402, 403, 404, 405]
 
 
 def compute_membership_scores(model, dataset, indices, device, batch_size=256):
@@ -46,11 +48,58 @@ def run_audit():
         all_m.extend(score_fn(ml, mlb))
         all_n.extend(score_fn(nl, nlb))
 
+    # Wilson CI-based evaluation (existing)
     result = prepare.evaluate_audit(all_m, all_n)
     result.wall_seconds = time.time() - t0
-    return result
+
+    # GDP-based evaluation (new)
+    from dp_audit_tightness.privacy.gdp_estimation import estimate_epsilon_gdp
+    eps_upper = result.epsilon_upper
+    gdp = estimate_epsilon_gdp(all_m, all_n, delta=prepare.DELTA)
+
+    eps_gdp_point = _mu_to_eps_point(gdp, prepare.DELTA) if gdp.mu_point > 0 else 0.0
+    gdp_point_tr = eps_gdp_point / eps_upper if eps_gdp_point > 0 else 0.0
+    gdp_cons_tr = gdp.epsilon_lower / eps_upper if gdp.epsilon_lower > 0 else 0.0
+
+    return result, gdp, gdp_cons_tr, gdp_point_tr
+
+
+def _mu_to_eps_point(gdp, delta):
+    """Get point estimate epsilon from GDP (using mu_point, not CI)."""
+    from dp_audit_tightness.privacy.gdp_estimation import _mu_to_epsilon
+    return _mu_to_epsilon(gdp.mu_point, delta)
+
+
+def print_comparison(result, gdp, gdp_cons_tr, gdp_point_tr):
+    """Print Wilson CI vs GDP side by side."""
+    print("=" * 70)
+    print("WILSON CI vs GDP ESTIMATION")
+    print("=" * 70)
+    print(f"  epsilon_upper:          {result.epsilon_upper:.4f}")
+    print(f"  samples:                {result.num_member_samples} members, "
+          f"{result.num_nonmember_samples} non-members")
+    print()
+    print(f"  --- Wilson CI (existing) ---")
+    print(f"  epsilon_lower:          {result.epsilon_lower:.6f}")
+    print(f"  tightness_ratio:        {result.tightness_ratio:.4%}")
+    print(f"  TPR={result.selected_tpr}  FPR={result.selected_fpr}")
+    print()
+    eps_point = _mu_to_eps_point(gdp, prepare.DELTA) if gdp.mu_point > 0 else 0.0
+    print(f"  --- GDP via AUC (new) ---")
+    print(f"  AUC:                    {gdp.auc:.6f}")
+    print(f"  mu_point:               {gdp.mu_point:.6f}")
+    print(f"  mu_ci_lower (95%):      {gdp.mu_ci_lower:.6f}")
+    print(f"  eps_point (from mu):    {eps_point:.6f}  "
+          f"(tightness: {gdp_point_tr:.4%})")
+    print(f"  eps_conservative (CI):  {gdp.epsilon_lower:.6f}  "
+          f"(tightness: {gdp_cons_tr:.4%})")
+    if gdp.warning:
+        print(f"  warning: {gdp.warning}")
+    print("=" * 70)
 
 
 if __name__ == "__main__":
-    result = run_audit()
+    result, gdp, gdp_cons_tr, gdp_point_tr = run_audit()
     prepare.print_results(result)
+    print()
+    print_comparison(result, gdp, gdp_cons_tr, gdp_point_tr)

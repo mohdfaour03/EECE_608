@@ -103,6 +103,8 @@ First run trains and caches the DP-SGD model (~1 min). After that, each experime
 ### Current status
 
 - MNIST MLP (h=64, 1 epoch), epsilon_upper = 0.77
-- Point-estimate tightness: ~17% (negative_loss, budget=128x3 seeds)
-- Conservative (Wilson CI) tightness: 0% — TPR-FPR gaps too small for CI to confirm
-- **Next step**: reference model attack (needs GPU → Colab notebook)
+- **Best conservative tightness: 6.1%** (Raw LiRA K=32, budget=256, 5 seeds)
+- Raw LiRA K=32 is the best attack; Gaussian LiRA produces pathological results
+- All simple passive scoring (neg_loss, max_prob, etc.) gives 0% conservative
+- Reference model attack also gives 0% conservative
+- **Next steps**: GDP density estimation (replace Wilson CI), RMIA, worst-case initialization
