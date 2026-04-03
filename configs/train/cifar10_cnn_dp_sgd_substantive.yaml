@@ -1,0 +1,38 @@
+experiment_name: cifar10_cnn_dp_sgd_substantive
+dataset:
+  name: cifar10
+  data_dir: data/raw
+  validation_fraction: 0.1
+  num_workers: 0
+model:
+  name: cnn_cifar10
+  input_dim: 3072
+  hidden_dim: 128
+  num_classes: 10
+training:
+  batch_size: 256
+  eval_batch_size: 512
+  epochs: 5
+  clipping_norm: 1.0
+  noise_multiplier: 1.1
+  sampling_rate:
+  optimizer:
+    name: sgd
+    learning_rate: 0.05
+    weight_decay: 0.0
+    momentum: 0.9
+privacy:
+  delta: 0.00001
+  accountant: rdp
+run:
+  split_seed: 11
+  training_seed: 123
+  split_seeds:
+    - 11
+  training_seeds:
+    - 123
+    - 124
+    - 125
+  results_root: results
+  save_checkpoint: true
+  notes: "Substantive CIFAR-10 run with CNN under DP-SGD. 5 epochs, 3 training seeds."

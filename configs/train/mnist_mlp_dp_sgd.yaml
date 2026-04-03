@@ -1,0 +1,33 @@
+experiment_name: mnist_mlp_dp_sgd_noise_1p1
+dataset:
+  name: mnist
+  data_dir: data/raw
+  validation_fraction: 0.1
+  num_workers: 0
+model:
+  name: simple_mlp
+  input_dim: 784
+  hidden_dim: 256
+  num_classes: 10
+training:
+  batch_size: 256
+  eval_batch_size: 512
+  epochs: 5
+  clipping_norm: 1.0
+  noise_multiplier: 1.1
+  sampling_rate:
+  optimizer:
+    name: sgd
+    learning_rate: 0.15
+    weight_decay: 0.0
+    momentum: 0.0
+privacy:
+  delta: 0.00001
+  accountant: rdp
+run:
+  split_seed: 11
+  training_seed: 123
+  results_root: results
+  save_checkpoint: true
+  notes: "Starter configuration for the first tightness-study baseline."
+

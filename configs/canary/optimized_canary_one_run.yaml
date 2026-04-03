@@ -1,0 +1,21 @@
+training_result_path: results/training/example_training_run.json
+audit_regime: evaluator_controlled_canary_stress_test
+auditor_variant: optimized_canaries
+auditor_strength_rank: 3
+audit_mode: one_run
+delta: 0.00001
+repeated_seeds: [301]
+canary:
+  strategy: optimized_canaries
+  num_canaries: 128
+  insertion_rate: 0.01
+  optimize_steps: 100
+saturation:
+  min_absolute_improvement: 0.05
+  min_relative_improvement: 0.02
+  tightness_ratio_tolerance: 0.01
+  use_confidence_interval_overlap: true
+run:
+  results_root: results
+  save_debug_artifacts: true
+

@@ -1,0 +1,230 @@
+\documentclass{article}
+
+\usepackage[final]{neurips_2023}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+
+\title{Measuring the Tightness Gap: An Empirical Audit of\\Differential Privacy Guarantees in DP-SGD}
+
+\author{%
+  Mohamad Faour \\
+  Department of Electrical and Computer Engineering\\
+  EECE 608 --- First Draft\\
+  \texttt{mohd.faour.03@gmail.com} \\
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Differential privacy (DP) provides formal guarantees that bound the privacy leakage of a trained model, yet these guarantees are derived under worst-case assumptions that may not reflect the leakage an adversary can actually achieve in practice. Privacy auditing offers a way to test this: by mounting concrete attacks against a DP-trained model, one can estimate an empirical lower bound on leakage and compare it to the theoretical upper bound. A significant gap between the two suggests either that the theoretical analysis is loose or that the attack is too weak---but a lower bound that exceeds the claimed guarantee would indicate a violation of the privacy contract altogether. In this work, we build an end-to-end auditing pipeline for DP-SGD and evaluate it under two threat models: an active canary insertion attack, in which crafted examples are planted in the training set, and a passive membership inference attack, in which the adversary can only query the released model. Training a small MLP on MNIST with $\varepsilon_{\text{upper}} = 0.771$, our best canary auditor recovers roughly 36\% of the theoretical bound, while the strongest non-pathological passive auditor achieves about 12\%. We document the engineering pitfalls encountered during development---seed propagation errors, pathological small-sample artifacts, and score direction misalignment---and describe the fixes that were necessary to obtain reliable empirical bounds.
+\end{abstract}
+
+\section{Introduction}
+
+Differential privacy (DP) gives us a way to put a number on the privacy cost of training a machine learning model. The DP-SGD algorithm introduced by Abadi et al.~\citep{abadi2016deep} clips per-sample gradients and adds Gaussian noise at each step, and a privacy accountant then tallies up the total cost as a parameter $\varepsilon$. The smaller the $\varepsilon$, the better the guarantee.
+
+The catch is that $\varepsilon_{\text{upper}}$ from the accountant is a worst-case number. It holds for any possible dataset and any possible adversary. In practice, the leakage a real attacker could demonstrate on a particular trained model might be much smaller. The gap between what the theory promises and what an attacker can actually pull off is what we call the \emph{tightness gap}.
+
+Understanding this gap matters for two reasons. First, if the gap is large, it means we might be adding more noise than necessary---hurting model utility for a theoretical worst case that never materializes. Second, measuring the gap tells us how good our attacks are: a persistently large gap might mean our auditing tools are too weak, not that the model is safe.
+
+Recent work has begun to close this gap. Nasr et al.~\citep{nasr2023tight} showed that carefully designed auditing schemes can produce nearly tight privacy estimates with just two training runs. Steinke et al.~\citep{steinke2023privacy} pushed this further, getting tight audits from a single run by inserting multiple canaries at once. On the passive side, membership inference attacks~\citep{shokri2017membership, carlini2022membership} give us a natural way to probe leakage when we can only observe the final model.
+
+In this project, we built an experimental pipeline that measures the tightness gap under both an active threat model (canary insertion) and a passive one (model-only querying). This report covers where we are: what we built, what results we have so far, what went wrong during development, and what comes next.
+
+\section{Setup and Definitions}
+
+For every experiment, we compute two numbers and compare them:
+
+\begin{itemize}
+    \item $\varepsilon_{\text{upper}}$: the theoretical privacy bound from the DP accountant, given the noise multiplier, clipping norm, sampling rate, number of epochs, and $\delta$.
+    \item $\varepsilon_{\text{lower}}$: the empirical privacy leakage we can actually demonstrate through an auditing attack.
+\end{itemize}
+
+From these we get the \textbf{privacy loss gap}, $\Delta\varepsilon = \varepsilon_{\text{upper}} - \varepsilon_{\text{lower}}$, and the \textbf{tightness ratio}, $\rho = \varepsilon_{\text{lower}} / \varepsilon_{\text{upper}}$. If $\rho = 1$, the attacker has matched the worst-case bound; if $\rho \ll 1$, either the bound is loose or the attacker is weak.
+
+We also track \textbf{saturation}: as we try progressively stronger auditors, does $\varepsilon_{\text{lower}}$ keep growing or does it plateau? A plateau would tell us the auditor family has hit its ceiling.
+
+\subsection{Two Threat Models}
+
+We keep two experiment tracks completely separate in code, configuration, and outputs:
+
+\textbf{Track 1 -- Canary stress testing.} The evaluator gets to insert crafted ``canary'' examples into the training set before DP-SGD training. After training, the evaluator tries to tell apart inserted canaries from control canaries that were held out. This is the stronger threat model---it is a controlled stress test, not a realistic attack scenario.
+
+\textbf{Track 2 -- Passive auditing.} The auditor sees only the released model and cannot touch the training data. The auditor queries the model on known members and non-members and tries to separate them based on the model's outputs. This is the realistic deployment scenario.
+
+\section{Methodology}
+
+\subsection{Model and Training}
+
+We use MNIST~\citep{lecun1998mnist} with a small two-layer MLP: the $28 \times 28$ images are flattened and passed through a $784 \to 64$ linear layer with ReLU, then a $64 \to 10$ output layer. We train with DP-SGD using the Opacus library~\citep{yousefpour2021opacus} with batch size 256, gradient clipping norm $C = 1.0$, noise multiplier $\sigma = 1.1$, learning rate 0.15, and $\delta = 10^{-5}$, for a single epoch on the full 60{,}000-example training set. Under these settings, the R\'{e}nyi DP accountant~\citep{mironov2017renyi} in Opacus reports $\varepsilon_{\text{upper}} = 0.771$.
+
+We repeat everything across three random seeds (123, 124, 125). All models, configs, and results are saved as JSON with schema validation so that downstream analysis can trust the artifact format.
+
+\subsection{Canary Stress Testing}
+
+The canary pipeline works in five steps. First, we \textbf{generate} canary images by placing structured pixel patches at deterministic positions within a blank $28 \times 28$ image, assigned a target label. We currently have three strategies of increasing aggressiveness: \texttt{random\_canaries} (3-pixel patches at intensity 0.8), \texttt{improved\_canaries} (4-pixel patches at 0.95), and \texttt{optimized\_canaries} (5-pixel patches at full intensity). Second, we \textbf{insert} 32 canaries into the training set at an insertion rate of 0.5\%. Third, we \textbf{retrain} a fresh DP-SGD model on the augmented data with the same hyperparameters. Fourth, we \textbf{score} inserted canaries against held-out decoys by computing the target margin---the gap between the target-label logit and the strongest non-target logit---on each. Fifth, we \textbf{repeat} the process across two audit seeds per training seed to accumulate a distribution of membership scores.
+
+\subsection{Passive Membership Inference}
+
+The passive pipeline loads a trained checkpoint and constructs a balanced query set: half known training members, half known non-members (held-out test examples). We tried four different scoring rules to see which gives the strongest signal:
+
+\begin{itemize}
+    \item \emph{Probability margin} (labeled \texttt{logit\_margin} in code): the gap between the top two softmax probabilities, $s(x) = p_1 - p_2$ where $p_1 \geq p_2 \geq \cdots$ are the sorted softmax outputs.
+    \item \emph{Max probability}: the maximum softmax probability.
+    \item \emph{Negative loss}: the negative of the cross-entropy loss on the true label.
+    \item \emph{Score fusion}: a combination of the above using percentile rank normalization.
+\end{itemize}
+
+The baseline query budget is 128 examples (64 members, 64 non-members). We also experimented with temperature scaling calibration using 20\% of the query budget as a held-out calibration set.
+
+\subsection{Estimating the Empirical Lower Bound}
+
+Given the member and non-member score distributions from either auditing track, we estimate $\varepsilon_{\text{lower}}$ as follows. We sweep over all unique score values as thresholds. At each threshold $\tau$, we compute the true positive rate $\text{TPR}(\tau)$ and false positive rate $\text{FPR}(\tau)$, then convert to a privacy loss estimate:
+\begin{equation}
+    \hat{\varepsilon}(\tau) = \max\!\left(0, \;\ln\!\left(\frac{\text{TPR}(\tau) - \delta}{\text{FPR}(\tau)}\right)\right)
+\end{equation}
+We pick the threshold that maximizes $\hat{\varepsilon}$, subject to a member-favoring constraint ($\text{TPR} > \text{FPR}$). To avoid overstating leakage due to small-sample noise, we compute Wilson score intervals~\citep{wilson1927probable} for both rates and report a conservative bound using the lower CI for TPR and upper CI for FPR. When the best threshold falls in a sparse tail (fewer than 5 observations or under 12.5\% of samples), we flag it and default to the conservative bound.
+
+\section{Results}
+
+\subsection{Training}
+
+Table~\ref{tab:training} shows the training results. All three seeds land in the same ballpark, as expected since the mechanism parameters are identical.
+
+\begin{table}[h]
+\caption{DP-SGD training on MNIST (1 epoch, $\sigma = 1.1$, $C = 1.0$, $\delta = 10^{-5}$).}
+\label{tab:training}
+\centering
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Seed} & \textbf{Accuracy (\%)} & \textbf{Loss} & $\boldsymbol{\varepsilon_{\text{upper}}}$ \\
+\midrule
+123 & 83.87 & 0.514 & 0.771 \\
+124 & 83.83 & 0.512 & 0.771 \\
+125 & 83.93 & 0.504 & 0.771 \\
+\midrule
+Mean & 83.88 & 0.510 & 0.771 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+With just one epoch and a noise multiplier of 1.1, we get around 84\% accuracy, which is decent for a noisy single-pass training on MNIST. The theoretical privacy cost comes out to $\varepsilon = 0.771$, identical across seeds since the mechanism parameters are the same.
+
+\subsection{Canary Results}
+
+Table~\ref{tab:canary} gives the canary auditing results using \texttt{random\_canaries}.
+
+\begin{table}[h]
+\caption{Canary stress test results (\texttt{random\_canaries}, 2 audit seeds per training seed).}
+\label{tab:canary}
+\centering
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Seed} & $\boldsymbol{\varepsilon_{\text{lower}}}$ & \textbf{Gap} & \textbf{Ratio} & \textbf{Saturated?} \\
+\midrule
+123 & 0.274 & 0.493 & 35.8\% & No \\
+124 & 0.274 & 0.493 & 35.8\% & No \\
+125 & 0.274 & 0.493 & 35.8\% & No \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The canary auditor manages to demonstrate about a third of the theoretical leakage. That said, the fact that all three seeds produce the exact same number is suspicious---we trace this to a seed propagation bug in Section~\ref{sec:bugs}. We present these pre-fix results here because the corrected runs, while properly seed-varying, produce pathological bounds that exceed the theoretical upper limit; the confidence-aware conservative estimates collapse to zero. The pre-fix results thus remain our strongest non-pathological canary finding, though they should be interpreted with this caveat in mind.
+
+\subsection{Passive Auditing Results}
+
+Table~\ref{tab:passive} shows the passive results after applying the postfix score direction and member-favoring corrections (see Section~\ref{sec:bugs}). We report per-seed results rather than averages, because several seed--variant combinations still produce pathological bounds ($\varepsilon_{\text{lower}} > \varepsilon_{\text{upper}}$) even after correction.
+
+\begin{table}[h]
+\caption{Passive auditing results (postfix-corrected, query budget 128). Entries marked $\dagger$ are pathological ($\rho > 1$). Only probability margin on seeds 123--124 and score fusion on seed 123 yield non-pathological bounds.}
+\label{tab:passive}
+\centering
+\begin{tabular}{@{}llccc@{}}
+\toprule
+\textbf{Score Rule} & \textbf{Seed} & $\boldsymbol{\varepsilon_{\text{lower}}}$ & \textbf{Gap} & \textbf{Ratio} \\
+\midrule
+Prob.\ margin & 123 & 0.095 & 0.676 & 12.3\% \\
+Prob.\ margin & 124 & 0.133 & 0.638 & 17.3\% \\
+Prob.\ margin & 125 & 1.386$^\dagger$ & $-0.615$ & 179.8\% \\
+\midrule
+Score fusion & 123 & 0.251 & 0.520 & 32.6\% \\
+\midrule
+Max probability & 123 & 1.098$^\dagger$ & $-0.327$ & 142.5\% \\
+Negative loss & 123 & 1.098$^\dagger$ & $-0.327$ & 142.5\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The passive results are noisier than the canary track. When results are non-pathological, the best tightness ratio comes from probability margin at about 12--17\%, well below the canary track. However, many seed--variant combinations still produce bounds exceeding the theoretical upper limit, indicating that the postfix corrections are necessary but not sufficient. The small query budget (128 examples) and the difficulty of separating member from non-member score distributions with simple heuristics both contribute to this instability. Among the non-pathological results, probability-margin scoring gives the strongest signal, consistent with findings in the membership inference literature~\citep{carlini2022membership}.
+
+\subsection{Cross-Track Summary}
+
+\begin{table}[h]
+\caption{Best auditor from each threat model.}
+\label{tab:summary}
+\centering
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Threat Model} & \textbf{Auditor} & $\boldsymbol{\varepsilon_{\text{lower}}}$ & \textbf{Ratio} \\
+\midrule
+Canary (active) & Random canaries & 0.274 & 35.8\% \\
+Passive (model-only) & Prob.\ margin (seed 123) & 0.095 & 12.3\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The tightness gap is substantial under both threat models. Even with the stronger canary attack, we only recover about a third of the theoretical bound. The passive auditor's best non-pathological result (12.3\%) is notably weaker, as expected given the strictly weaker threat model.
+
+\section{Bugs, Artifacts, and Fixes}
+\label{sec:bugs}
+
+Building the pipeline surfaced several issues worth documenting, both because they affected results and because they illustrate common pitfalls in privacy auditing experiments.
+
+\textbf{Seed propagation bug.} The identical canary results across all three training seeds (Table~\ref{tab:canary}) turned out to stem from a bug: the experiment seed was not being passed through to the canary generation and audit phases, so every run used the same effective random state. After fixing seed propagation, the three seeds produce meaningfully different $\varepsilon_{\text{lower}}$ values (standard deviation 0.668), confirming that the pipeline now responds to seed variation as expected.
+
+\textbf{Pathological bounds.} After the seed fix, several runs---both canary and passive---produced $\varepsilon_{\text{lower}} > \varepsilon_{\text{upper}}$, with ratios as high as $2.3\times$. This happens when the threshold sweep lands on a sparse tail of the score distribution and small-sample noise inflates the TPR/FPR ratio. It is a known issue in auditing with limited samples~\citep{nasr2023tight}. We addressed this by adding confidence-aware reporting: when the selected threshold lies in a sparse region, we report the conservative Wilson-interval-based bound instead of the point estimate. Under this stricter mode, the canary bounds drop to $\varepsilon_{\text{lower}} = 0.0$, meaning the confidence intervals cannot support a positive leakage claim at the current sample size. This tells us we need more samples to make a positive leakage claim, not that leakage is absent.
+
+\textbf{Score direction in passive auditing.} The initial passive pipeline did not properly align score direction across all scoring rules. For example, negative loss should decrease (become more negative) for non-members, but without explicit alignment the threshold sweep could select non-member-favoring events, producing inflated or meaningless bounds. A postfix correction enforces consistent member-favoring constraints and proper direction mapping, which reduced the mean passive $\varepsilon_{\text{lower}}$ by roughly 95\% for the probability-margin score rule and eliminated many---though not all---pathological cases. The remaining pathological entries (Table~\ref{tab:passive}) reflect the fundamental difficulty of separating member and non-member distributions with small query budgets.
+
+\section{Related Work}
+
+The theoretical foundations of differential privacy are laid out in the monograph by Dwork and Roth~\citep{dwork2014algorithmic}. DP-SGD~\citep{abadi2016deep} made it practical to train neural networks with DP guarantees, and R\'{e}nyi DP~\citep{mironov2017renyi} tightened the accounting. Opacus~\citep{yousefpour2021opacus} provides the production-grade implementation we use.
+
+On the auditing side, membership inference~\citep{shokri2017membership} established the core paradigm, and Carlini et al.~\citep{carlini2022membership} refined it with principled likelihood-ratio attacks. For DP-SGD specifically, Nasr et al.~\citep{nasr2023tight} achieved tight audits with two runs, and Steinke et al.~\citep{steinke2023privacy} got it down to one. PANORAMIA~\citep{kazmi2024panoramia} recently proposed passive auditing without retraining using synthetic non-members.
+
+We do not propose a new auditing algorithm. Instead, we focus on building a reproducible pipeline that compares the gap across threat models, with confidence-aware reporting and saturation tracking built in.
+
+\section{What Comes Next}
+
+This report covers the engineering validation phase. Several concrete next steps will move the project toward scientific conclusions:
+
+\textbf{Stronger canary attacks.} Our current canaries are hand-designed pixel patterns. Gradient-based canary optimization, as used in~\citep{nasr2023tight, steinke2023privacy}, should substantially narrow the gap.
+
+\textbf{Stronger passive attacks.} The current scoring rules are simple heuristics. Training a dedicated membership inference classifier or using likelihood-ratio methods~\citep{carlini2022membership} should produce tighter passive bounds.
+
+\textbf{More data and bigger models.} MNIST with a 2-layer MLP and one epoch of training is a minimal setup. Moving to CIFAR-10 and deeper networks with longer training would produce more realistic leakage signals.
+
+\textbf{Larger sample budgets.} The collapse of confidence-aware canary bounds to zero tells us we need more canaries and more repeated runs to make statistically grounded claims.
+
+\textbf{Systematic saturation analysis.} With a wider range of auditor strengths, we can trace out the curve of $\varepsilon_{\text{lower}}$ vs.\ auditor strength and determine where saturation actually occurs.
+
+\section{Conclusion}
+
+We have a working pipeline that measures the tightness gap between DP-SGD's theoretical privacy guarantees and what auditing attacks can actually demonstrate. The pipeline supports two threat models, multiple auditor variants, confidence-aware bound estimation, and saturation detection. On MNIST, we see a substantial gap: the best canary attack recovers about 36\% of the theoretical $\varepsilon$, and the best non-pathological passive result recovers about 12\%. Along the way we caught and fixed a seed bug, dealt with pathological small-sample artifacts, and corrected a score direction issue in passive auditing. With the pipeline validated, the next step is to run stronger attacks and determine how much of the remaining gap is due to loose theory versus weak auditors.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

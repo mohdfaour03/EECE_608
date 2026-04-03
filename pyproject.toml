@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dp-audit-tightness"
+version = "0.1.0"
+description = "Experimental scaffold for studying the tightness gap between theoretical upper bounds and empirical lower bounds on privacy loss."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "PyYAML>=6.0",
+  "matplotlib>=3.8",
+  "torch>=2.2",
+  "torchvision>=0.17",
+  "opacus>=1.5",
+  "dp-accounting>=0.4",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
