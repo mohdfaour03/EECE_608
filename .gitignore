@@ -14,8 +14,6 @@ __pycache__/
 # Autoresearch runtime state
 autoresearch/.cache/
 autoresearch/run.log
-autoresearch/results.tsv
-autoresearch/approaches_log.jsonl
 
 # Zips (large, not needed)
 *.zip

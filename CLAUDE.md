@@ -77,62 +77,32 @@ python experiments/aggregate_results.py
 4. **Systematic hyperparameter sweeps** — noise_multiplier, batch_size, clipping_norm, learning_rate grids.
 5. **Gap decomposition validation** — cross-validate accounting_gap vs threat_model_gap vs residual_gap.
 
-## Autoresearch (Karpathy-style Autonomous Experiment Loop)
+## Autoresearch — Experiment Sandbox
 
-Adapted from [karpathy/autoresearch](https://github.com/karpathy/autoresearch). An AI agent autonomously experiments with auditing strategies overnight, keeping changes that improve `tightness_ratio` and discarding the rest.
+Rapid experimentation for finding stronger membership inference attacks.
 
 ### Files
 
 ```
 autoresearch/
-  agent_loop.py        THE LOOP — calls OpenRouter LLM, modifies experiment.py, runs, keeps/reverts
-  prepare.py           DO NOT MODIFY — evaluation harness (model loading, epsilon estimation, metric output)
-  experiment.py        AGENT SANDBOX — scoring functions, attack strategies, query logic
-  program.md           LLM context — research knowledge, strategy ideas, progression plan
-  results.tsv          Experiment log (flat TSV, auto-created)
-  approaches_log.jsonl STRUCTURED MEMORY — every approach tried with code summaries (never truncated)
-  notebooks/
-    kaggle_autoresearch.ipynb   Ready-to-run Kaggle notebook (imports agent_loop, handles setup/resume/save)
+  prepare.py           DO NOT MODIFY — evaluation harness (model loading, epsilon estimation, metric printing)
+  experiment.py        Experiment sandbox — modify to try different attacks
+  results/             Saved experiment outputs
+  notebooks/           Colab notebook for GPU experiments (reference model / LiRA attacks)
+  .cache/              Cached trained model (auto-created on first run)
 ```
 
-### How to run
+### How to run locally
 
-**One-time setup** (trains and caches the model):
 ```bash
 python autoresearch/experiment.py
 ```
 
-**Start the autonomous loop** (self-contained, calls OpenRouter API directly):
-```bash
-set OPENROUTER_API_KEY=sk-or-...
-python autoresearch/agent_loop.py
-```
+First run trains and caches the DP-SGD model (~1 min). After that, each experiment takes seconds.
 
-Optional flags:
-- `--model meta-llama/llama-3.3-70b-instruct` (override model)
-- `--max-experiments 50` (stop after N)
-- `--timeout 300` (per-experiment timeout seconds)
-- `--dry-run` (preview what would be sent to the LLM)
+### Current status
 
-### How it works
-
-1. Agent reads `program.md` and `experiment.py`
-2. Agent modifies `experiment.py` (new scoring function, attack strategy, etc.)
-3. Agent commits, runs `python autoresearch/experiment.py > run.log 2>&1`
-4. Agent extracts `tightness_ratio` from output
-5. If improved: keep commit (new baseline). If not: `git reset --hard HEAD~1`
-6. Agent logs to `results.tsv` and loops forever
-
-### Metric
-
-`tightness_ratio` — higher is better. Baseline: ~0.12 (passive logit_margin). Target: push toward 0.36+ (match canary) or higher.
-
-### What the agent should try
-
-- Novel scoring functions (entropy, per-class normalization, logit temperature)
-- Score fusion / ensembling
-- Reference-model attacks (LiRA-style)
-- Neighborhood attacks (score perturbed inputs)
-- Larger query budgets for tighter confidence intervals
-- Calibration (temperature scaling, z-score normalization)
-- Class-conditional analysis
+- MNIST MLP (h=64, 1 epoch), epsilon_upper = 0.77
+- Point-estimate tightness: ~17% (negative_loss, budget=128x3 seeds)
+- Conservative (Wilson CI) tightness: 0% — TPR-FPR gaps too small for CI to confirm
+- **Next step**: reference model attack (needs GPU → Colab notebook)
