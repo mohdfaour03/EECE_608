@@ -11,6 +11,7 @@ This script:
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import statistics
@@ -113,7 +114,8 @@ def get_training_record_and_config():
     train_config = _build_train_config()
 
     set_global_seed(TRAINING_SEED)
-    outcome = train_dp_sgd(config=train_config)
+    _logger = logging.getLogger("autoresearch")
+    outcome = train_dp_sgd(config=train_config, logger=_logger)
 
     outcome.record.model_artifact_path = str(checkpoint_path)
     if outcome.checkpoint_path and Path(outcome.checkpoint_path).exists():
@@ -210,7 +212,8 @@ def train_shadow_model(train_dataset, seed: int, epochs: int = EPOCHS):
     # Train fresh shadow model with same architecture + DP params
     config = _build_train_config(epochs=epochs, seed=seed)
     set_global_seed(seed)
-    outcome = train_dp_sgd(config=config)
+    _logger = logging.getLogger("autoresearch.shadow")
+    outcome = train_dp_sgd(config=config, logger=_logger)
 
     # Cache the checkpoint
     if outcome.checkpoint_path and Path(outcome.checkpoint_path).exists():
