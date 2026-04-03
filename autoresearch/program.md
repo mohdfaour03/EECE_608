@@ -8,9 +8,9 @@ Your job is to find stronger auditing strategies that **maximize the tightness r
 ## The problem
 
 A DP-SGD model was trained on MNIST (simple MLP, 128 hidden units) with DP-SGD:
-- noise_multiplier=1.1, clipping_norm=1.0, batch_size=256, **10 epochs**
+- noise_multiplier=1.1, clipping_norm=1.0, batch_size=256, **3 epochs**
 - Theoretical guarantee: `epsilon_upper` at delta=1e-5 (exact value shown at runtime)
-- 10 epochs means real overfitting — the membership signal should be much stronger than 1-epoch
+- 3 epochs gives enough overfitting for a real membership signal while keeping a meaningful gap to close
 
 Auditing tries to prove a lower bound `epsilon_lower` on the *actual* privacy leakage. The tightness ratio is `epsilon_lower / epsilon_upper`. Current best: ~12% with passive logit_margin. Your goal: push this much higher.
 
