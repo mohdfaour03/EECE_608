@@ -3,9 +3,9 @@
 The agent can change anything in this file to try different auditing strategies.
 The goal is to maximize tightness_ratio (higher = better).
 
-Current approach: passive audit with logit_margin scoring.
-The agent should try new scoring functions, score combinations, query strategies,
-calibration methods, or entirely new attack approaches.
+Current approach: passive audit with negative_loss scoring, budget=512.
+The agent should try new scoring functions, score combinations, calibration,
+reference model attacks, or entirely new approaches.
 
 Run: python autoresearch/experiment.py
 Output: tightness_ratio: X.XXXXXX (parsed by the agent loop)
@@ -17,7 +17,6 @@ import time
 import sys
 from pathlib import Path
 
-# Make sure prepare.py is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import prepare
 
@@ -26,7 +25,7 @@ import torch.nn.functional as F
 
 
 # ---- Knobs the agent can change ----
-QUERY_BUDGET = 128  # total queries (half member, half non-member)
+QUERY_BUDGET = 512  # total queries (half member, half non-member)
 SEED = 401
 # -------------------------------------
 
@@ -55,11 +54,9 @@ def score_fn(logits: torch.Tensor, labels: torch.Tensor) -> list[float]:
     """Membership score function — agent should experiment with this.
 
     Higher scores should indicate membership (training set).
-    Current: logit_margin (gap between top-2 softmax probabilities).
+    Current: negative_loss (members have lower loss → higher -loss).
     """
-    probs = torch.softmax(logits, dim=1)
-    top2 = probs.topk(k=2, dim=1).values
-    scores = top2[:, 0] - top2[:, 1]
+    scores = -F.cross_entropy(logits, labels, reduction="none")
     return scores.cpu().tolist()
 
 

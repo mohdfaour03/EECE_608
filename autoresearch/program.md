@@ -7,9 +7,10 @@ Your job is to find stronger auditing strategies that **maximize the tightness r
 
 ## The problem
 
-A DP-SGD model was trained on MNIST (simple MLP, 64 hidden units) with DP-SGD:
-- noise_multiplier=1.1, clipping_norm=1.0, batch_size=256, 1 epoch
-- Theoretical guarantee: `epsilon_upper ≈ 0.77` (at delta=1e-5)
+A DP-SGD model was trained on MNIST (simple MLP, 128 hidden units) with DP-SGD:
+- noise_multiplier=1.1, clipping_norm=1.0, batch_size=256, **10 epochs**
+- Theoretical guarantee: `epsilon_upper` at delta=1e-5 (exact value shown at runtime)
+- 10 epochs means real overfitting — the membership signal should be much stronger than 1-epoch
 
 Auditing tries to prove a lower bound `epsilon_lower` on the *actual* privacy leakage. The tightness ratio is `epsilon_lower / epsilon_upper`. Current best: ~12% with passive logit_margin. Your goal: push this much higher.
 
@@ -100,12 +101,18 @@ These are harder to implement but represent the state of the art:
   - **Cost**: Training K shadow models (K=4-8 is enough for a demo). Each takes ~1 min for MNIST. Total: ~5-10 min. Worth it if the improvement is large.
 
 - **Reference model attack** (simplified LiRA): Train ONE reference model on the non-member set only. Compare target model loss to reference model loss. If target loss << reference loss on example x, x is likely a member.
-  - **Cost**: Training 1 extra model (~1 min). Very practical.
+  - **Cost**: Training 1 extra model (~30s on GPU). Very practical.
+  - **Helper available**: `prepare.train_shadow_model(dataset, seed, epochs)` — trains a DP-SGD model with the same architecture and returns it. Models are cached so subsequent calls with the same seed are instant.
   - **Implementation sketch**:
     1. Split non-members: 80% for reference model training, 20% for scoring
-    2. Train reference model with same architecture + DP params on the 80%
+    2. `ref_model = prepare.train_shadow_model(non_member_80pct, seed=999)`
     3. Score = target_loss(x) - reference_loss(x)
     4. Members should have more negative scores (target model knows them better)
+
+- **LiRA (Likelihood Ratio Attack)**: The strongest known MIA. Train K shadow models.
+  - **Helper**: call `prepare.train_shadow_model(dataset, seed=i)` for i in range(K)
+  - Each shadow model is cached after first training (~30s GPU each)
+  - K=4-8 shadow models = 2-4 minutes total, then instant on reruns
 
 - **Augmentation consistency**: For each example, create K augmented versions (small rotations, translations, noise). Score = variance of model outputs across augmentations. Members should have more consistent outputs (the model memorized them specifically, not just their neighborhood).
 
@@ -146,7 +153,7 @@ Follow this order. Each builds on the previous:
 - Do NOT modify `prepare.py`. It's the measurement standard.
 - Do NOT install new packages beyond what's in `pyproject.toml` (torch, torchvision, opacus, dp-accounting, numpy, pandas, matplotlib, pyyaml).
 - Do NOT modify any files in `src/` — those are the project's core library.
-- Each experiment should complete in under 5 minutes. Exception: reference model training experiments can take up to 10 minutes.
+- Each experiment should complete in under 5 minutes on GPU. Shadow model training (~30s each on GPU) is cached — subsequent runs reuse the cache.
 - The metric is `tightness_ratio` from the printed output. Higher is better.
 
 ## Output format

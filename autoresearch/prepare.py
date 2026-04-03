@@ -5,7 +5,8 @@ DO NOT MODIFY THIS FILE. The agent only modifies experiment.py.
 This script:
 1. Ensures a pre-trained DP-SGD model exists (trains one if missing).
 2. Provides the evaluation function that experiment.py calls.
-3. Prints the final metric line that the agent loop parses.
+3. Provides helpers for training shadow/reference models on GPU.
+4. Prints the final metric line that the agent loop parses.
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ import os
 import statistics
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,11 +34,11 @@ CACHE_DIR.mkdir(exist_ok=True)
 DATASET = "mnist"
 MODEL_NAME = "simple_mlp"
 INPUT_DIM = 784
-HIDDEN_DIM = 64
+HIDDEN_DIM = 128          # bigger than the old 64 — more capacity to memorize
 NUM_CLASSES = 10
 IMAGE_SHAPE = (1, 28, 28)
 BATCH_SIZE = 256
-EPOCHS = 1
+EPOCHS = 10               # 10 epochs — real overfitting, stronger membership signal
 CLIPPING_NORM = 1.0
 NOISE_MULTIPLIER = 1.1
 DELTA = 1e-5
@@ -63,18 +64,39 @@ class EvalResult:
     wall_seconds: float
 
 
+def _build_train_config(epochs=EPOCHS, hidden_dim=HIDDEN_DIM, seed=TRAINING_SEED,
+                        split_seed=SPLIT_SEED, noise_multiplier=NOISE_MULTIPLIER):
+    """Build a TrainExperimentConfig programmatically."""
+    from dp_audit_tightness.config import (
+        TrainExperimentConfig, DatasetConfig, ModelConfig,
+        TrainingConfig, OptimizerConfig, PrivacyConfig, RunConfig,
+    )
+    return TrainExperimentConfig(
+        experiment_name=f"autoresearch_mnist_e{epochs}_h{hidden_dim}_s{seed}",
+        dataset=DatasetConfig(name=DATASET, data_dir="data/raw",
+                              validation_fraction=0.05, num_workers=0),
+        model=ModelConfig(name=MODEL_NAME, input_dim=INPUT_DIM,
+                          hidden_dim=hidden_dim, num_classes=NUM_CLASSES),
+        training=TrainingConfig(
+            batch_size=BATCH_SIZE, eval_batch_size=512, epochs=epochs,
+            clipping_norm=CLIPPING_NORM, noise_multiplier=noise_multiplier,
+            optimizer=OptimizerConfig(name="sgd", learning_rate=LEARNING_RATE,
+                                     weight_decay=0.0, momentum=0.0),
+        ),
+        privacy=PrivacyConfig(delta=DELTA, accountant="rdp"),
+        run=RunConfig(split_seed=split_seed, training_seed=seed,
+                      results_root="results", save_checkpoint=True),
+    )
+
+
 def get_training_record_and_config():
     """Return (training_record, training_config) from cache, training if needed."""
-    from dp_audit_tightness.config import load_train_config, TrainExperimentConfig
     from dp_audit_tightness.training.dp_sgd import train_dp_sgd
     from dp_audit_tightness.utils.results import (
-        TrainingRunRecord,
-        save_training_result,
-        save_json,
-        load_training_result,
+        save_training_result, save_json, load_training_result,
     )
     from dp_audit_tightness.utils.seeds import set_global_seed
-    from dp_audit_tightness.config import config_to_dict
+    from dp_audit_tightness.config import config_to_dict, TrainExperimentConfig
 
     result_path = CACHE_DIR / "training_result.json"
     config_snapshot_path = CACHE_DIR / "training_config.json"
@@ -87,13 +109,12 @@ def get_training_record_and_config():
         )
         return record, config
 
-    print(">>> No cached model found. Training DP-SGD model (one-time cost)...")
-    train_config = load_train_config(ROOT / "configs" / "train" / "mnist_mlp_dp_sgd_smoke.yaml")
+    print(f">>> Training DP-SGD model (hidden={HIDDEN_DIM}, epochs={EPOCHS}) ...")
+    train_config = _build_train_config()
 
     set_global_seed(TRAINING_SEED)
     outcome = train_dp_sgd(config=train_config)
 
-    # Save to cache
     outcome.record.model_artifact_path = str(checkpoint_path)
     if outcome.checkpoint_path and Path(outcome.checkpoint_path).exists():
         import shutil
@@ -101,22 +122,18 @@ def get_training_record_and_config():
     outcome.record.config_snapshot_path = str(config_snapshot_path)
 
     save_json(config_snapshot_path, config_to_dict(train_config))
-    save_training_result(outcome.record, results_root=str(CACHE_DIR))
 
-    # Also save a simple JSON at the known path
     result_path.write_text(
         json.dumps(asdict(outcome.record), indent=2, default=str), encoding="utf-8"
     )
 
-    print(f">>> Model trained. epsilon_upper={outcome.record.epsilon_upper_theory:.4f}")
+    print(f">>> Done. epsilon_upper={outcome.record.epsilon_upper_theory:.4f}, "
+          f"accuracy={outcome.record.utility_metrics.get('accuracy', 0):.4f}")
     return outcome.record, train_config
 
 
 def evaluate_audit(member_scores: list[float], nonmember_scores: list[float]) -> EvalResult:
-    """Evaluate an audit attempt. Called by experiment.py with its scores.
-
-    Returns an EvalResult. The agent loop reads the printed tightness_ratio line.
-    """
+    """Evaluate an audit attempt. Returns EvalResult."""
     from dp_audit_tightness.privacy.empirical import estimate_empirical_lower_bound
     from dp_audit_tightness.evaluation.metrics import compute_privacy_tightness_metrics
 
@@ -158,7 +175,7 @@ def evaluate_audit(member_scores: list[float], nonmember_scores: list[float]) ->
 
 
 def load_model_and_data():
-    """Load the cached model and dataset bundle for experiment.py to use."""
+    """Load the cached target model and dataset for experiment.py."""
     import torch
     from dp_audit_tightness.data.datasets import load_dataset_bundle
     from dp_audit_tightness.models.io import load_model_for_inference
@@ -168,6 +185,41 @@ def load_model_and_data():
     model = load_model_for_inference(config.model, record.model_artifact_path, device=device)
     bundle = load_dataset_bundle(config.dataset, split_seed=record.split_seed)
     return model, bundle, device, record
+
+
+def train_shadow_model(train_dataset, seed: int, epochs: int = EPOCHS):
+    """Train a shadow model on the given dataset. For reference/LiRA attacks.
+
+    Returns the trained model (eval mode, on device).
+    This is the expensive helper that justifies GPU.
+    """
+    import torch
+    from dp_audit_tightness.utils.seeds import set_global_seed
+    from dp_audit_tightness.training.dp_sgd import train_dp_sgd
+
+    shadow_cache = CACHE_DIR / f"shadow_s{seed}_e{epochs}.pt"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Check cache
+    if shadow_cache.exists():
+        from dp_audit_tightness.models.io import load_model_for_inference
+        _, config = get_training_record_and_config()
+        model = load_model_for_inference(config.model, str(shadow_cache), device=device)
+        return model
+
+    # Train fresh shadow model with same architecture + DP params
+    config = _build_train_config(epochs=epochs, seed=seed)
+    set_global_seed(seed)
+    outcome = train_dp_sgd(config=config)
+
+    # Cache the checkpoint
+    if outcome.checkpoint_path and Path(outcome.checkpoint_path).exists():
+        import shutil
+        shutil.copy2(outcome.checkpoint_path, shadow_cache)
+
+    from dp_audit_tightness.models.io import load_model_for_inference
+    model = load_model_for_inference(config.model, str(shadow_cache), device=device)
+    return model
 
 
 def print_results(result: EvalResult):
