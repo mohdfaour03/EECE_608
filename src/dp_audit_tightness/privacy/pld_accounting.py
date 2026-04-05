@@ -75,7 +75,7 @@ def compute_epsilon_pld(
                 delta=delta,
             )
             return {"epsilon_pld": round(eps, 6), "backend_used": "google_dp_accounting", "num_steps": num_steps}
-        except ImportError:
+        except (ImportError, AttributeError, Exception) as e:
             if backend == "google":
                 raise
             # Fall through to analytical

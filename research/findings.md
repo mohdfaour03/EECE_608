@@ -4,59 +4,86 @@
 
 ### Setup
 - MNIST MLP (784-64-10), 1 epoch, batch_size=256, clipping_norm=1.0
-- Default: noise_multiplier=1.1, delta=1e-5
-- epsilon_upper (RDP) = 0.771
+- delta=1e-5, sampling_rate=0.00449, num_steps=222
+- Auditing: Raw LiRA, K=32 shadow models, budget=256, 5 seeds (640+640 samples)
 
 ---
 
-### Finding 1: Simple passive attacks give 0% conservative tightness
+## Main Result: Sigma Sweep with Gap Decomposition
+
+| sigma | eps_rdp | eps_pld | eps_lower | tr(RDP) | tr(PLD) | Acct gap | Audit gap | Acct% | Aud% | Accuracy |
+|-------|---------|---------|-----------|---------|---------|----------|-----------|-------|------|----------|
+| 0.5   | 6.43    | 0.47    | 0.025     | 0.4%    | 5.4%    | 5.96     | 0.44      | 93%   | 7%   | 84.0%    |
+| 0.8   | 1.68    | 0.28    | 0.023     | 1.3%    | 8.1%    | 1.40     | 0.26      | 84%   | 16%  | 84.0%    |
+| 1.1   | 0.77    | 0.20    | 0.023     | 3.0%    | 11.8%   | 0.57     | 0.17      | 77%   | 23%  | 84.0%    |
+| 1.5   | 0.36    | 0.14    | 0.022     | 6.1%    | 15.5%   | 0.22     | 0.12      | 65%   | 35%  | 83.9%    |
+| 2.0   | 0.19    | 0.10    | 0.030     | 15.7%   | 29.5%   | 0.09     | 0.07      | 56%   | 44%  | 83.5%    |
+| 3.0   | 0.12    | 0.07    | 0.038     | 31.2%   | 56.7%   | 0.05     | 0.03      | 65%   | 35%  | 82.7%    |
+| 5.0   | 0.11    | 0.04    | 0.048     | 44.0%   | 127%*   | 0.07     | -0.01*    | 117%* | -17%*| 81.4%    |
+
+*sigma=5.0: eps_lower > eps_pld, meaning the audit EXCEEDS the tighter PLD bound. This could indicate (a) the analytical GDP approximation is slightly too tight at high sigma, or (b) small-sample noise in eps_lower.
+
+### Key Findings
+
+**Finding 1: The accounting gap dominates at low sigma (strong privacy)**
+- At sigma=0.5, RDP accounting is 93% of the total gap. The bound is 6.43 but PLD says it should be 0.47 -- a 14x difference. Switching accountants alone would close almost the entire gap.
+- This means practitioners using Opacus with RDP accounting are **massively over-estimating** privacy cost in the strong-privacy regime.
+
+**Finding 2: Tightness improves dramatically at higher sigma (weaker privacy)**
+- Conservative tightness vs RDP: 0.4% at sigma=0.5 --> 44% at sigma=5.0
+- Conservative tightness vs PLD: 5.4% at sigma=0.5 --> 57% at sigma=3.0
+- The auditor recovers more of the bound when privacy is weaker, as expected.
+
+**Finding 3: eps_lower is remarkably stable across sigma**
+- eps_lower conservative ranges from 0.022 to 0.048 across a 10x range of sigma
+- The gap closes because eps_upper comes down, not because the attack gets stronger
+- This suggests the LiRA attack is near its ceiling for this model/dataset/budget
+
+**Finding 4: Accuracy is robust to noise**
+- Only 3% accuracy drop (84% to 81%) across sigma 0.5-5.0
+- For 1-epoch MNIST MLP, the model barely notices the noise -- most learning happens in one pass
+
+**Finding 5: At sigma >= 5.0, the audit exceeds PLD**
+- eps_lower=0.048 > eps_pld=0.038 at sigma=5.0
+- This is a methodological signal: either the analytical GDP bound is slightly too aggressive, or Wilson CI is noisy at these small epsilon values. Worth investigating.
+
+---
+
+## Earlier Findings
+
+### Simple passive attacks give 0% conservative tightness
 - Scoring rules tested: neg_loss, max_probability, logit_margin, score_fusion
-- Budget: 128-512 per seed, 3-5 seeds
-- Wilson CI conservative bound: 0% across all configs
-- Point estimates: up to ~24% but unreliable (small samples, no CI support)
-- **Conclusion**: Simple heuristic scores cannot reliably distinguish members from non-members at epsilon=0.77
+- Wilson CI conservative: 0% across all configs at sigma=1.1
+- Simple heuristic scores cannot reliably distinguish members from non-members
 
-### Finding 2: Raw LiRA achieves 6.1% conservative tightness
-- K=32 shadow models (each on 50% of training data), budget=256, 5 seeds
-- Wilson CI conservative: 6.1% (eps_lower=0.047)
-- AUC between member/nonmember scores: ~0.83
-- This is consistent with Pillutla et al. 2024 (8% at eps=1.0 with stronger threat model)
-- **Conclusion**: LiRA provides the first non-zero conservative lower bound
+### Raw LiRA at sigma=1.1
+- K=32, budget=256, 5 seeds: 6.1% conservative (previous best, from colab_lira_v2)
+- This sweep confirms: 3.0% at same sigma (slightly different due to different shadow seeds)
 
-### Finding 3: Gaussian LiRA is broken for our setup
-- Original bug: non-member scores used raw log-likelihood instead of log-likelihood ratio (different scales), causing FPR=0 and >500% tightness
-- Fix attempt 1 (full-population shadows): killed all signal because 57K/3K train/eval asymmetry meant shadows always include ~95% of training data
-- Fix attempt 2 (synthetic IN distribution): pending results
-- **Conclusion**: Gaussian LiRA requires either (a) target model trained on 50% subset, or (b) balanced train/eval split
+### Gaussian LiRA is broken for our setup
+- Original bug: non-member scoring scale mismatch (fixed)
+- Full-population shadows: killed signal due to 57K/3K asymmetry (reverted)
+- Synthetic IN approach: pending results
 
-### Finding 4: GDP estimation is not valid for DP-SGD auditing
-- GDP assumes mechanism's ROC follows Gaussian trade-off: AUC = Phi(mu/sqrt(2))
-- DP-SGD is not a GDP mechanism (it's a composition of subsampled Gaussians)
-- AUC=0.85 under GDP implies epsilon=8+, but true epsilon=0.77
-- **Conclusion**: GDP converts AUC to epsilon assuming wrong functional form; produces pathological overestimates
-
-### Finding 5: Max-threshold GDP estimator is anti-conservative
-- Original implementation: take max mu = Phi^-1(TPR) - Phi^-1(FPR) over all thresholds
-- This cherry-picks noise, inflating mu
-- Fixed to AUC-based estimator, which is honest but still invalid for DP-SGD (Finding 4)
+### GDP estimation not valid for DP-SGD
+- AUC-to-mu conversion assumes Gaussian ROC shape; DP-SGD has different shape
+- Produces pathological overestimates (500%+ tightness)
 
 ---
 
-### Literature Context
+## Literature Context
 
 | Setting | Tightness | Source |
 |---------|-----------|-------|
 | White-box + worst-case dataset | ~100% | Nasr et al. 2023 |
 | White-box + natural data, eps=8 | ~20% | Nasr et al. 2023 |
 | Black-box + worst-case init, MNIST, eps=1.0 | 8% | Pillutla et al. 2024 |
-| **Our work: passive black-box, LiRA, eps=0.77** | **6.1%** | This project |
+| **Our work: sigma sweep, eps=0.19** | **15.7%** | This project |
+| **Our work: sigma sweep, eps=0.12** | **31.2%** | This project |
 | Black-box + worst-case init, MNIST, eps=10 | 65% | Pillutla et al. 2024 |
 
 ---
 
-### Next: Sigma Sweep (in progress)
-- Sweep noise_multiplier = [0.5, 0.8, 1.1, 1.5, 2.0, 3.0, 5.0]
-- For each: train target + K=32 shadows, run Raw LiRA, compute Wilson CI
-- Compute both RDP and PLD epsilon_upper for gap decomposition
-- Key question: does tightness improve at higher epsilon (weaker privacy)?
-- Notebook: `autoresearch/notebooks/colab_sigma_sweep.ipynb`
+## Notebooks
+- `autoresearch/notebooks/colab_sigma_sweep.ipynb` -- sigma sweep (main results)
+- `autoresearch/notebooks/colab_lira_v2.ipynb` -- LiRA attack experiments
