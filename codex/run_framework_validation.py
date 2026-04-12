@@ -565,15 +565,25 @@ def build_report(
         key=lambda row: -float(row.get("epsilon_lower_conservative") or 0.0),
     )
 
+    if check_counts.get("fail", 0) > 0:
+        framework_outcome = "fail"
+        scientific_status = "invalid for interpretation"
+    elif check_counts.get("warn", 0) > 0:
+        framework_outcome = "pass with warnings"
+        scientific_status = "still provisional overall"
+    else:
+        framework_outcome = "pass with findings"
+        scientific_status = "still provisional overall"
+
     lines = [
         "# Framework Validation Report",
         "",
         "## Outcome",
         "",
-        "- framework execution validation: `pass with findings`",
-        "- exact-PLD accounting validation: `pass`",
-        "- attack semantics validation: `pass`",
-        "- scientific trust level: `still provisional overall`",
+        f"- framework execution validation: `{framework_outcome}`",
+        f"- exact-PLD accounting validation: `{'pass' if check_counts.get('fail', 0) == 0 else 'conditional'}`",
+        f"- attack semantics validation: `{'pass' if check_counts.get('fail', 0) == 0 else 'conditional'}`",
+        f"- scientific trust level: `{scientific_status}`",
         "",
         "## Counts",
         "",

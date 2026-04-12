@@ -364,6 +364,9 @@ def main() -> None:
     print(f"Wrote validation checks to {CHECKS_JSON}")
     print(f"Wrote validation report to {REPORT_MD}")
     print(f"Validation rows: {len(payload['audit_rows'])}, elapsed_seconds={elapsed}")
+    failed_checks = sum(1 for check in payload["checks"] if check["status"] == "fail")
+    if failed_checks:
+        raise SystemExit(f"GPU-scale validation completed with {failed_checks} failed checks.")
 
 
 if __name__ == "__main__":
