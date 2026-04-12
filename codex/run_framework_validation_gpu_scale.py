@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 import time
 import traceback
@@ -31,6 +32,7 @@ SUMMARY_JSON = RESULTS_DIR / "framework_validation_gpu_scale_summary.json"
 SUMMARY_CSV = RESULTS_DIR / "framework_validation_gpu_scale_rows.csv"
 CHECKS_JSON = RESULTS_DIR / "framework_validation_gpu_scale_checks.json"
 REPORT_MD = RESULTS_DIR / "framework_validation_gpu_scale_report.md"
+ARTIFACTS_ZIP = RESULTS_DIR / "framework_validation_gpu_scale_artifacts.zip"
 
 PASSIVE_AUDIT_SEEDS = list(range(401, 411))
 CANARY_AUDIT_SEEDS = list(range(101, 111))
@@ -359,10 +361,14 @@ def main() -> None:
     started = time.time()
     payload = run_gpu_scale_validation()
     elapsed = round(time.time() - started, 3)
+    if ARTIFACTS_ZIP.exists():
+        ARTIFACTS_ZIP.unlink()
+    shutil.make_archive(str(ARTIFACTS_ZIP.with_suffix("")), "zip", RESULTS_DIR)
     print(f"Wrote validation summary to {SUMMARY_JSON}")
     print(f"Wrote validation rows CSV to {SUMMARY_CSV}")
     print(f"Wrote validation checks to {CHECKS_JSON}")
     print(f"Wrote validation report to {REPORT_MD}")
+    print(f"Wrote bundled artifacts zip to {ARTIFACTS_ZIP}")
     print(f"Validation rows: {len(payload['audit_rows'])}, elapsed_seconds={elapsed}")
     failed_checks = sum(1 for check in payload["checks"] if check["status"] == "fail")
     if failed_checks:
