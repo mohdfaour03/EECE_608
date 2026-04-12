@@ -21,6 +21,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
+_VALUE_DISCRETIZATION_INTERVAL = 1e-4
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -103,17 +105,26 @@ def _compute_with_dp_accounting(
 ) -> float:
     """Use google/dp-accounting's PLD accountant for tight composition."""
     from dp_accounting.pld import privacy_loss_distribution as pld_lib
-    from dp_accounting.pld import common
 
     # Build the PLD for a single step of subsampled Gaussian mechanism.
-    pld_single = pld_lib.from_gaussian_mechanism(
-        standard_deviation=noise_multiplier,
-        sensitivities=[1.0],
-        pessimistic_estimate=True,
-        sampling_prob=sampling_rate,
-        use_connect_dots=True,
-        value_discretization_interval=common.VALUE_DISCRETIZATION_INTERVAL,
-    )
+    kwargs = {
+        "standard_deviation": noise_multiplier,
+        "pessimistic_estimate": True,
+        "sampling_prob": sampling_rate,
+        "use_connect_dots": True,
+        "value_discretization_interval": _VALUE_DISCRETIZATION_INTERVAL,
+    }
+    try:
+        pld_single = pld_lib.from_gaussian_mechanism(
+            sensitivity=1.0,
+            **kwargs,
+        )
+    except TypeError:
+        # Older dp-accounting builds used a plural sensitivities argument.
+        pld_single = pld_lib.from_gaussian_mechanism(
+            sensitivities=[1.0],
+            **kwargs,
+        )
 
     # Self-compose for num_steps applications.
     pld_composed = pld_single.self_compose(num_steps)
