@@ -5,7 +5,12 @@ import logging
 import statistics
 
 from dp_audit_tightness.auditing.base import AuditObservation
-from dp_audit_tightness.auditing.canary.generation import generate_canaries, insert_canaries_into_dataset
+from dp_audit_tightness.auditing.canary.generation import (
+    generate_canaries,
+    generate_matched_canaries,
+    insert_canaries_into_dataset,
+    insert_matched_canaries_into_dataset,
+)
 from dp_audit_tightness.auditing.canary.seeding import build_canary_seed_plan
 from dp_audit_tightness.config import CanaryAuditConfig, TrainExperimentConfig
 from dp_audit_tightness.data.datasets import DatasetBundle, load_dataset_bundle
@@ -45,18 +50,35 @@ def run_one_run_canary_audit(
     )
     base_bundle = load_dataset_bundle(training_config.dataset, split_seed=training_record.split_seed)
     image_shape = _infer_image_shape(training_config.dataset.name)
-    canaries = generate_canaries(
-        config.canary,
-        seed=seed_plan.canary_generation_seed,
-        num_classes=training_config.model.num_classes,
-        image_shape=image_shape,
-    )
-    insertion_result = insert_canaries_into_dataset(
-        base_bundle.train_dataset,
-        canaries,
-        insertion_rate=config.canary.insertion_rate,
-        seed=seed_plan.canary_insertion_seed,
-    )
+    matched_design = config.canary.strategy.startswith("matched_")
+    if matched_design:
+        # Exchangeable (matched) design: all canaries drawn from one
+        # distribution; membership decided by a random split. Removes the
+        # appearance-difference artifact that inflated eps_lower at high sigma.
+        canaries = generate_matched_canaries(
+            config.canary,
+            seed=seed_plan.canary_generation_seed,
+            num_classes=training_config.model.num_classes,
+            image_shape=image_shape,
+        )
+        insertion_result = insert_matched_canaries_into_dataset(
+            base_bundle.train_dataset,
+            canaries,
+            seed=seed_plan.canary_insertion_seed,
+        )
+    else:
+        canaries = generate_canaries(
+            config.canary,
+            seed=seed_plan.canary_generation_seed,
+            num_classes=training_config.model.num_classes,
+            image_shape=image_shape,
+        )
+        insertion_result = insert_canaries_into_dataset(
+            base_bundle.train_dataset,
+            canaries,
+            insertion_rate=config.canary.insertion_rate,
+            seed=seed_plan.canary_insertion_seed,
+        )
     augmented_bundle = DatasetBundle(
         train_dataset=insertion_result.augmented_train_dataset,
         eval_dataset=base_bundle.eval_dataset,
@@ -122,6 +144,7 @@ def run_one_run_canary_audit(
         artifact_payload={
             "audit_mode": "one_run",
             "canary_strategy": config.canary.strategy,
+            "canary_matched_design": matched_design,
             "optimize_steps": config.canary.optimize_steps,
             "seed_plan": seed_plan.to_dict(),
             "canary_training_run_id": training_outcome.record.training_run_id,

@@ -1,0 +1,295 @@
+\documentclass{article}
+\usepackage[final]{neurips_2023}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+\title{Decomposing the Tightness Gap Between DP-SGD Privacy Guarantees and Empirical Audits}
+
+\author{%
+  Mohamad Faour \\
+  Department of Electrical and Computer Engineering \\
+  American University of Beirut \\
+  \texttt{msf20@mail.aub.edu}
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Machine learning models are increasingly trained on datasets that contain sensitive information about individuals. This creates privacy risks because trained models can reveal traces of their training data through confidence scores, losses, or membership signals. Differential privacy provides a formal mechanism for limiting this risk by bounding the influence of any single training record on the output distribution of a randomized learning algorithm. In differentially private learning, however, the theoretical guarantee reported by a privacy accountant may differ from the privacy leakage that an empirical audit can demonstrate. This work studies this tightness gap for DP-SGD and proposes a framework that decomposes the gap into contributions from the accounting method, threat model, auditor family, and statistical validation rule. The results show that PLD accounting gives tighter theoretical bounds than RDP accounting, active canary auditing can nearly match the accountant bound in a controlled MNIST setting, and passive model query auditing remains substantially more conservative across the evaluated datasets. These findings indicate that the tightness gap reflects the joint interaction of formal accounting, adversarial access, audit design, and empirical reliability.
+\end{abstract}
+
+\section{Introduction}
+Modern machine learning systems are increasingly trained on datasets that contain information about individuals. Medical records, financial transactions, location traces, user activity logs, and educational records can all be used to improve predictive performance, but they also create privacy risks. A model may reveal information about its training data through its outputs, confidence values, decision boundaries, or behavior on particular examples. This issue is especially important because the model can leak information even when the raw training data is never released.
+
+Membership inference attacks provide a concrete example of this risk. In a membership inference attack, an adversary attempts to determine whether a candidate record was included in the training set of a model \citep{shokri2017membership,yeom2018privacy,carlini2022membership}. Successful membership inference can expose sensitive participation information. For example, learning that a person was included in a medical dataset may reveal information about that person's health status. This makes privacy a technical property that can be measured through model behavior, rather than only a legal or policy concern.
+
+Differential privacy provides a formal framework for controlling this risk. A randomized mechanism $\mathcal{M}$ satisfies $(\epsilon,\delta)$ differential privacy if, for all neighboring datasets $D$ and $D'$ that differ in one individual record, and for all measurable output sets $S$,
+\[
+\Pr[\mathcal{M}(D) \in S]
+\leq
+e^{\epsilon}\Pr[\mathcal{M}(D') \in S] + \delta .
+\]
+The parameter $\epsilon$ controls the privacy loss, while $\delta$ allows a small probability of failure \citep{dwork2006calibrating,dwork2014algorithmic}. This guarantee limits how much the output distribution can change when one individual record is modified.
+
+DP-SGD applies differential privacy to neural network training by clipping per example gradients and adding calibrated Gaussian noise during stochastic optimization \citep{abadi2016deep}. A privacy accountant then converts the training configuration into a theoretical privacy upper bound, denoted by $\epsilon_{\mathrm{upper}}$. This value depends on the noise multiplier, clipping norm, sampling rate, number of optimization steps, and accounting method \citep{mironov2017renyi,koskela2020computing,gopi2021numerical,yousefpour2021opacus}.
+
+Empirical auditing studies the same privacy question from the opposite direction. Instead of deriving a worst case upper bound from the mechanism, an auditor applies a concrete attack and estimates the leakage that can be demonstrated from model behavior \citep{jagielski2020auditing,nasr2023tight,steinke2023privacy}. This produces an empirical lower bound, denoted by $\epsilon_{\mathrm{lower}}$. The difference between the accountant upper bound and the audit lower bound defines the tightness gap:
+\[
+\Delta \epsilon =
+\epsilon_{\mathrm{upper}} - \epsilon_{\mathrm{lower}} .
+\]
+The corresponding tightness ratio is
+\[
+\rho =
+\frac{\epsilon_{\mathrm{lower}}}{\epsilon_{\mathrm{upper}}}.
+\]
+A tightness ratio close to one indicates that the empirical audit nearly matches the accountant bound. A small ratio indicates a large gap whose source must be investigated.
+
+This work studies the factors that determine the tightness gap in DP-SGD. The framework separates four contributors: accounting method, threat model, auditor family, and statistical validation rule. This decomposition is necessary because a large gap can arise from a loose accountant, restricted adversarial access, weak audit statistic, or insufficient statistical support. A single numerical gap therefore does not explain why the theoretical and empirical privacy estimates differ.
+
+The final experiments show a clear contrast between active and passive auditing. Active canary auditing on MNIST recovers $99.6\%$ of the PLD accountant bound. Passive negative loss auditing on MNIST, sklearn digits, and Adult produces zero validated lower bounds under conservative confidence aware estimation. These results support the interpretation that active canary stress testing can nearly saturate the accountant bound in a controlled setting, while passive model query auditing provides substantially weaker evidence of leakage.
+
+The contribution of this work is a reproducible framework for decomposing the privacy tightness gap. The framework compares accounting methods, separates active and passive threat models, applies conservative validation to empirical lower bounds, and reports how much of the theoretical privacy bound is recovered by each audit.
+
+\section{Related Work}
+\paragraph{Differential privacy and private learning.}
+Differential privacy was introduced to formalize privacy as a bound on the influence of an individual record on the output of a randomized computation \citep{dwork2006calibrating,dwork2014algorithmic}. The definition is well suited to machine learning because it gives a worst case guarantee that does not depend on secrecy of the training algorithm. DP-SGD extends this principle to neural network training through per example gradient clipping and Gaussian noise addition \citep{abadi2016deep}. Practical libraries such as Opacus have made DP-SGD easier to use in PyTorch based pipelines \citep{yousefpour2021opacus}. The privacy utility tradeoff of DP-SGD remains sensitive to clipping, noise, batch sampling, model capacity, and training duration \citep{jayaraman2019evaluating,tramer2022debugging}.
+
+\paragraph{Privacy accounting.}
+A privacy accountant composes the privacy loss of many randomized training steps into a final $(\epsilon,\delta)$ guarantee. Moments accounting was used in the original DP-SGD analysis \citep{abadi2016deep}. Renyi differential privacy provides a general composition framework based on Renyi divergence and is widely used for iterative randomized mechanisms \citep{mironov2017renyi}. Gaussian differential privacy provides another view of privacy loss for Gaussian mechanisms and hypothesis testing interpretations \citep{dong2019gaussian}. Numerical accounting methods based on privacy loss distributions can produce tighter estimates for Gaussian and subsampled Gaussian mechanisms \citep{koskela2020computing,gopi2021numerical}. These accounting choices directly affect the apparent tightness gap because a looser accountant increases $\epsilon_{\mathrm{upper}}$ without changing the trained model.
+
+\paragraph{Membership inference and empirical privacy risk.}
+Membership inference attacks estimate whether a candidate record was included in the training set. \citet{shokri2017membership} introduced the standard black box membership inference setting using model outputs. \citet{yeom2018privacy} connected membership inference risk to overfitting and showed that training loss can serve as a simple membership signal. \citet{nasr2018machine} studied membership privacy through adversarial regularization, while \citet{sablayrolles2019white} analyzed Bayes optimal membership inference under white box and black box assumptions. \citet{carlini2022membership} showed that average attack accuracy can hide privacy risk and proposed likelihood ratio attacks evaluated at low false positive rates. These works motivate audit statistics based on loss, confidence, margins, and likelihood ratios.
+
+\paragraph{Empirical evaluation of private learning.}
+Empirical privacy evaluation studies how formal privacy guarantees correspond to observed leakage. \citet{jayaraman2019evaluating} evaluated differentially private learning algorithms in practice and emphasized the gap between privacy budgets and attack success. \citet{murakonda2020ml} introduced ML Privacy Meter as a tool for quantifying membership inference risk. \citet{tramer2022debugging} showed that implementation details can strongly affect privacy and utility in private training pipelines. These studies motivate framework level validation because empirical measurements can reflect both real privacy leakage and experimental artifacts.
+
+\paragraph{Auditing DP-SGD.}
+Privacy auditing estimates empirical lower bounds on privacy leakage and compares them with theoretical upper bounds. \citet{jagielski2020auditing} audited DP-SGD using data poisoning based attacks and studied whether DP-SGD is more private in practice than its formal analysis suggests. \citet{nasr2023tight} developed tight auditing procedures that can produce empirical lower bounds close to theoretical bounds under strong audit conditions. \citet{steinke2023privacy} proposed a one training run auditing method using multiple canaries. These works establish canary based auditing as a central tool for testing the tightness of DP-SGD guarantees.
+
+\paragraph{Threat models for privacy auditing.}
+The strength of an empirical audit depends on the adversary model. Active auditing allows the evaluator to insert canaries or otherwise influence the training data. Passive auditing restricts the evaluator to the released model and available examples. PANORAMIA studies privacy auditing without retraining and uses generated non member data, making it relevant to passive model query settings \citep{kazmi2024panoramia}. Recent black box auditing work shows that tighter audits are possible even when the adversary observes only the final model, although the audit must be carefully constructed \citep{annamalai2024nearly}. This literature motivates the separation between active canary stress tests and passive model query audits in the proposed framework.
+
+\paragraph{Position of this work.}
+The literature establishes three relevant principles. Formal DP-SGD guarantees depend on the accountant \citep{abadi2016deep,mironov2017renyi,gopi2021numerical}. Empirical leakage can be measured through membership inference or canary based auditing \citep{shokri2017membership,carlini2022membership,nasr2023tight,steinke2023privacy}. Audit conclusions depend on threat model and statistical reliability \citep{jagielski2020auditing,kazmi2024panoramia,annamalai2024nearly}. This work combines these principles into a single gap decomposition framework that compares accountants, separates active and passive auditors, validates empirical estimates, and reports how much of the theoretical privacy bound each audit recovers.
+
+\section{Methods}
+\subsection{Overview}
+For each experiment, the framework trains a model with DP-SGD, computes theoretical privacy upper bounds, runs empirical audits, validates the audit estimates, and reports gap statistics. The main outputs are $\epsilon_{\mathrm{upper}}$, $\epsilon_{\mathrm{lower}}$, $\Delta \epsilon$, and $\rho$.
+
+The framework is designed to answer a sequence of questions. First, it asks how the accounting method affects the reported theoretical upper bound. Second, it asks whether an active auditor can recover a lower bound close to the accountant bound. Third, it asks whether a weaker passive auditor can demonstrate leakage from final model queries. Fourth, it checks whether the empirical estimate is statistically supported and consistent with the theoretical guarantee.
+
+\subsection{DP-SGD Training}
+The training procedure follows the DP-SGD mechanism. For each minibatch, per example gradients are clipped to a fixed norm $C$. Gaussian noise is then added to the aggregated gradient before the model update. The clipped gradient for example $i$ is
+\[
+\bar{g}_i =
+g_i \cdot \min\left(1, \frac{C}{\|g_i\|_2}\right),
+\]
+and the noisy minibatch gradient is
+\[
+\tilde{g}
+=
+\frac{1}{B}
+\left(
+\sum_{i=1}^{B} \bar{g}_i
++
+\mathcal{N}(0,\sigma^2 C^2 I)
+\right),
+\]
+where $B$ is the batch size and $\sigma$ is the noise multiplier. The privacy accountant uses the sampling rate, number of steps, noise multiplier, and target $\delta$ to compute $\epsilon_{\mathrm{upper}}$.
+
+\subsection{Accounting Methods}
+The framework compares RDP and PLD accounting. RDP accounting composes privacy loss using Renyi divergence and then converts the result to $(\epsilon,\delta)$ privacy \citep{mironov2017renyi}. PLD accounting tracks the distribution of privacy loss and can produce tighter bounds for the subsampled Gaussian mechanism used by DP-SGD \citep{koskela2020computing,gopi2021numerical}. The final analysis uses PLD as the reporting reference because it gives the smaller valid upper bound in the completed experiments.
+
+\subsection{Threat Models}
+The framework evaluates two threat models.
+
+\textbf{Active canary auditing.}
+In the active setting, the evaluator inserts canary examples into the training set before DP-SGD training. After training, the auditor compares inserted canaries with held out controls. This setting serves as a controlled stress test of the privacy mechanism and follows the canary based auditing direction of recent tight auditing work \citep{nasr2023tight,steinke2023privacy}.
+
+\textbf{Passive model query auditing.}
+In the passive setting, the evaluator cannot modify the training data. The auditor queries the trained model on candidate member and non member examples and estimates leakage from the resulting scores. This setting is closer to model only evaluation and is related to membership inference and passive auditing work \citep{shokri2017membership,carlini2022membership,kazmi2024panoramia}.
+
+\subsection{Auditors}
+The active auditor uses canary examples and measures whether the trained model assigns stronger evidence to inserted canaries than to held out canaries. The passive auditor uses negative loss as the membership score, following the connection between membership risk and training loss studied by \citet{yeom2018privacy}. Higher negative loss indicates greater confidence on the correct label and may provide evidence of membership.
+
+The two auditors serve different roles in the framework. The active canary auditor tests whether a strong controlled audit can recover a large fraction of the accountant bound. The passive auditor tests whether a weaker final model access setting can still provide statistically supported leakage evidence. Their comparison allows the gap to be attributed in part to the threat model and auditor family.
+
+\subsection{Empirical Lower Bound Estimation}
+Given member and non member score distributions, the framework sweeps over thresholds $\tau$. For each threshold, it estimates
+\[
+\widehat{\mathrm{TPR}}(\tau)
+=
+\Pr[s(x) \geq \tau \mid x \in D_{\mathrm{train}}],
+\]
+and
+\[
+\widehat{\mathrm{FPR}}(\tau)
+=
+\Pr[s(x) \geq \tau \mid x \notin D_{\mathrm{train}}].
+\]
+The empirical privacy lower bound at threshold $\tau$ is estimated using a conservative confidence rule:
+\[
+\widehat{\epsilon}_{\mathrm{lower}}(\tau)
+=
+\max
+\left(
+0,
+\log
+\frac{
+\mathrm{LCB}(\widehat{\mathrm{TPR}}(\tau)) - \delta
+}{
+\mathrm{UCB}(\widehat{\mathrm{FPR}}(\tau))
+}
+\right),
+\]
+where $\mathrm{LCB}$ and $\mathrm{UCB}$ denote lower and upper confidence bounds. The final lower bound is
+\[
+\epsilon_{\mathrm{lower}}
+=
+\max_{\tau}
+\widehat{\epsilon}_{\mathrm{lower}}(\tau),
+\]
+subject to member favoring direction and statistical support. Estimates exceeding $\epsilon_{\mathrm{upper}}$ are excluded from headline reporting.
+
+\subsection{Framework Algorithm}
+Algorithm~\ref{alg:framework} summarizes the experimental procedure. The procedure runs once per dataset and threat model and produces one record per accountant and auditor pair. Each record carries the audit estimate, the accountant bound, the validation outcome, and the threshold used to obtain the lower bound, so the gap can later be read with its diagnostic context attached. Selecting the tightest valid accountant before the auditor loop fixes the reporting reference, which keeps the comparison across auditors interpretable.
+
+\begin{algorithm}[h]
+\caption{DP-SGD Gap Decomposition Audit Framework}
+\label{alg:framework}
+\begin{algorithmic}[1]
+\Require Dataset $D$, DP-SGD configuration, accountants $\mathcal{A}$, auditors $\mathcal{U}$
+\Ensure Validated $\epsilon_{\mathrm{upper}}$, $\epsilon_{\mathrm{lower}}$, $\Delta\epsilon$, and $\rho$
+\State Train a model with DP-SGD using gradient clipping and Gaussian noise.
+\For{each accountant $a \in \mathcal{A}$}
+    \State Compute theoretical upper bound $\epsilon_{\mathrm{upper}}^{(a)}$.
+\EndFor
+\State Select the tightest valid accountant bound as the reporting reference.
+\For{each auditor $u \in \mathcal{U}$}
+    \State Generate audit scores for members and non members, or inserted and held out canaries.
+    \State Sweep thresholds and estimate candidate empirical lower bounds.
+    \State Apply confidence aware validation.
+    \State Compute $\Delta\epsilon = \epsilon_{\mathrm{upper}} - \epsilon_{\mathrm{lower}}$.
+    \State Compute $\rho = \epsilon_{\mathrm{lower}} / \epsilon_{\mathrm{upper}}$.
+\EndFor
+\State Report validated results grouped by accountant, threat model, and auditor.
+\end{algorithmic}
+\end{algorithm}
+
+\section{Results}
+\subsection{Accounting Contributes to the Gap}
+Figure~\ref{fig:accountants} compares RDP and PLD upper bounds across the completed datasets. On MNIST, RDP reports $\epsilon = 0.946$, while PLD reports $\epsilon = 0.688$. This reduction shows that the choice of accountant directly affects the apparent size of the gap. A looser accountant can make an auditor appear weaker even when the empirical lower bound is unchanged.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.78\linewidth]{figures/figure_1_accountant_upper_bounds.png}
+    \caption{Comparison of RDP and PLD accountant upper bounds. PLD gives tighter theoretical upper bounds and is used as the reference accountant for the final tightness analysis.}
+    \label{fig:accountants}
+\end{figure}
+
+The accountant comparison is the first component of the decomposition. It isolates the contribution of the formal accounting method before comparing auditors. This step is important because the same trained model can appear to have a larger or smaller gap depending on the accountant used as the reference.
+
+\subsection{Active Canary Auditing Nearly Saturates the MNIST Bound}
+The main result is obtained on MNIST using active canary auditing. The PLD accountant reports
+\[
+\epsilon_{\mathrm{upper}} = 0.687,
+\]
+while the active canary audit reports
+\[
+\epsilon_{\mathrm{lower}} = 0.685.
+\]
+The resulting gap is
+\[
+\Delta \epsilon = 0.002,
+\]
+with tightness ratio
+\[
+\rho = 99.6\%.
+\]
+The active canary auditor therefore recovers almost the entire PLD upper bound while remaining below the theoretical guarantee.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.78\linewidth]{figures/figure_2_upper_vs_lower_by_attack.png}
+    \caption{Theoretical PLD upper bounds versus empirical audit lower bounds. Active canary auditing on MNIST nearly matches the PLD upper bound, while passive audits produce zero validated lower bounds.}
+    \label{fig:upperlower}
+\end{figure}
+
+This result is the main experimental finding. It shows that the gap can nearly disappear under a strong active threat model. The result also remains consistent with the DP guarantee because the empirical lower bound does not exceed the accountant upper bound.
+
+\subsection{Passive Auditing Remains Conservative}
+Passive negative loss auditing produces zero validated lower bounds on MNIST, sklearn digits, and Adult. This result indicates that the passive baseline did not provide sufficient statistical evidence for positive leakage under the conservative validation rule. The contrast with active canary auditing supports the role of the threat model and auditor strength in determining the gap.
+
+\begin{table}[t]
+\centering
+\caption{Final validated audit results. MNIST active canary auditing is the main result. Passive audits serve as confirmation runs for the weaker model query setting.}
+\label{tab:auditresults}
+\begin{tabular}{llrrrr}
+\toprule
+Dataset & Auditor & $\epsilon_{\mathrm{lower}}$ & $\epsilon_{\mathrm{upper}}$ & Gap & Tightness \\
+\midrule
+MNIST          & Active canary         & 0.685 & 0.687 & 0.002 & 99.6\% \\
+MNIST          & Passive negative loss & 0.000 & 0.688 & 0.688 & 0.0\%  \\
+sklearn digits & Passive negative loss & 0.000 & 2.144 & 2.144 & 0.0\%  \\
+Adult          & Passive negative loss & 0.000 & 4.718 & 4.718 & 0.0\%  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The passive results should be read as validated lower bounds, where a zero entry means that the selected passive score did not support a positive estimate under the confidence rule. This distinction is important because empirical audits can fail to detect leakage when the threat model is weak, the score is simple, or the sample budget is limited.
+
+\subsection{Tightness Summary}
+Figure~\ref{fig:tightness} reports the tightness ratio for the validated audits. Active canary auditing on MNIST reaches $99.6\%$ tightness. Passive audits remain at $0\%$ across the completed datasets.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.78\linewidth]{figures/figure_3_mnist_gap_decomposition_clean.png}
+    \caption{Tightness ratio by dataset and auditor. The active canary audit on MNIST recovers nearly all of the PLD upper bound. Passive model query audits remain conservative.}
+    \label{fig:tightness}
+\end{figure}
+
+The tightness summary provides the second part of the decomposition. Once the accountant is fixed to PLD, the remaining difference is explained primarily by the audit setting. Active canary auditing nearly saturates the bound, while passive negative loss auditing provides no validated positive lower bound.
+
+\section{Discussion}
+The results support gap decomposition as a useful way to interpret DP-SGD privacy audits. The MNIST canary experiment shows that the PLD accountant bound can be nearly saturated under a strong active threat model. This finding suggests that the accountant bound can be empirically tight in a controlled stress test.
+
+The passive results show a different pattern. Negative loss auditing gives zero validated lower bounds on MNIST, sklearn digits, and Adult. This outcome reflects the weaker access model, the simplicity of the passive score, and the conservative confidence rule. The comparison indicates that the remaining gap in passive auditing is governed by auditor capability and statistical support more than by accounting.
+
+The framework also improves reliability by separating valid lower bounds from unsupported estimates. Empirical estimates that exceed the theoretical upper bound are excluded from headline reporting. This validation step is necessary because sparse threshold regions and small sample effects can inflate empirical privacy estimates.
+
+\subsection{Limitations}
+The strongest result is obtained on MNIST under active canary auditing. This setting is valuable as a controlled stress test, but it does not establish the same tightness across all datasets, models, or deployment settings. The additional sklearn digits and Adult runs serve as confirmation that the framework runs beyond MNIST, while the strong near saturation result remains specific to the MNIST active canary experiment.
+
+The passive branch uses negative loss as a baseline audit score. This score is simple and interpretable, but stronger passive methods such as likelihood ratio attacks may provide tighter lower bounds \citep{carlini2022membership}. The zero passive results should therefore be read as limitations of the passive baseline under conservative validation, with the question of underlying passive leakage left open.
+
+The empirical lower bound estimation also depends on sample budget and confidence intervals. Larger query budgets, more canaries, and more repeated runs would reduce uncertainty and make the statistical validation stronger.
+
+\subsection{Future Work}
+Future work should extend the active audit from structured canaries to optimized canaries. Gradient based canary construction may increase the empirical lower bound and enable more systematic saturation analysis \citep{nasr2023tight,steinke2023privacy}.
+
+The canary search space should also be structured. Instead of optimizing all raw pixels, future experiments can parameterize canaries through patch variables, PCA coefficients, or latent representations from an autoencoder. This would reduce optimization complexity and improve stability when moving beyond MNIST.
+
+The passive branch should be strengthened with likelihood ratio auditing and learned membership inference classifiers \citep{carlini2022membership,kazmi2024panoramia,annamalai2024nearly}. These methods can test whether the zero passive lower bounds arise from limited auditor strength or weak model query leakage.
+
+Finally, the framework should be evaluated on larger datasets and deeper models, including CIFAR 10 and convolutional architectures. The purpose is to measure how the source of the tightness gap changes with dataset complexity, model capacity, and training duration.
+
+\section{Conclusion}
+This work presents a framework for decomposing the tightness gap between DP-SGD privacy guarantees and empirical audit lower bounds. The framework separates accounting method, threat model, auditor strength, and statistical validation. On MNIST, active canary auditing recovers $99.6\%$ of the PLD accountant upper bound. Passive model query auditing remains conservative on MNIST, sklearn digits, and Adult. The results show that the privacy tightness gap is determined by the joint contribution of the accountant, the attacker access model, the audit statistic, and the reliability of the empirical estimator.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

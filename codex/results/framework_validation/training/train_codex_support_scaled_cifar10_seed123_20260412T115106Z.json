@@ -1,0 +1,28 @@
+{
+  "batch_size": 128,
+  "clipping_norm": 1.0,
+  "config_snapshot_path": "C:\\Users\\user\\OneDrive - American University of Beirut\\Documents\\EECE_608\\codex\\results\\framework_validation\\training\\configs\\train_codex_support_scaled_cifar10_seed123_20260412T115106Z_config.json",
+  "created_at_utc": "2026-04-12T11:51:06.998474+00:00",
+  "dataset": "cifar10",
+  "delta": 1e-05,
+  "epochs": 1,
+  "epsilon_upper_pld": 2.635023,
+  "epsilon_upper_theory": 3.1517415970441944,
+  "experiment_name": "codex_support_scaled_cifar10",
+  "learning_rate": 0.05,
+  "model_artifact_path": "C:\\Users\\user\\OneDrive - American University of Beirut\\Documents\\EECE_608\\codex\\results\\framework_validation\\training\\checkpoints\\train_codex_support_scaled_cifar10_seed123_20260412T115106Z.pt",
+  "model_name": "cnn_cifar10",
+  "noise_multiplier": 1.1,
+  "notes": "Codex support-scaled pilot sidecar run.",
+  "optimizer_name": "sgd",
+  "pld_accounting_backend": "google_dp_accounting",
+  "sampling_rate": 0.125,
+  "split_seed": 11,
+  "training_run_id": "train_codex_support_scaled_cifar10_seed123_20260412T115106Z",
+  "training_seed": 123,
+  "utility_metrics": {
+    "accuracy": 0.15625,
+    "loss": 2.2807748317718506
+  },
+  "weight_decay": 0.0
+}

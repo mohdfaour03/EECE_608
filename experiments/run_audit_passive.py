@@ -87,6 +87,7 @@ def main() -> None:
             delta=config.delta,
             align_event_to_score_direction=True,
             require_member_favoring=True,
+            report_confidence_supported_lower_bound=True,
         )
         epsilon_upper_theory = observation.epsilon_upper_theory or training_record.epsilon_upper_theory
         utility_metrics = observation.utility_metrics or training_record.utility_metrics
@@ -158,6 +159,10 @@ def main() -> None:
                 "raw_statistics": observation.raw_statistics,
                 "artifact_payload": observation.artifact_payload,
                 "estimation_method": empirical_estimate.estimation_method,
+                "epsilon_lower_empirical_point_estimate": empirical_estimate.epsilon_lower_empirical_point_estimate,
+                "epsilon_lower_empirical_conservative": empirical_estimate.epsilon_lower_empirical_conservative,
+                "valid_empirical_lower_bound": tightness_metrics.valid_empirical_lower_bound,
+                "sanity_warning": tightness_metrics.sanity_warning,
                 "selected_threshold": empirical_estimate.selected_threshold,
                 "selected_event": empirical_estimate.selected_event,
                 "selected_event_direction": empirical_estimate.selected_event_direction,
@@ -202,9 +207,11 @@ def main() -> None:
             "Computed privacy comparison %s",
             format_kv_fields(
                 epsilon_upper_theory=epsilon_upper_theory,
+                epsilon_lower_empirical_point_estimate=empirical_estimate.epsilon_lower_empirical_point_estimate,
                 epsilon_lower_empirical=empirical_estimate.epsilon_lower_empirical,
                 privacy_loss_gap=tightness_metrics.privacy_loss_gap,
                 tightness_ratio=tightness_metrics.tightness_ratio,
+                valid_empirical_lower_bound=tightness_metrics.valid_empirical_lower_bound,
                 member_favoring=empirical_estimate.member_favoring,
                 no_member_favoring_event_found=empirical_estimate.no_member_favoring_event_found,
                 saturation_detected=saturation_decision.saturation_detected,

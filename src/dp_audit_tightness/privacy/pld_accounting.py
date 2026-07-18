@@ -9,9 +9,15 @@ This module provides two back-ends:
 
 1. **dp_accounting** (Google's library) — preferred; uses the analytical
    Gaussian mechanism PLD with Poisson subsampling.
-2. **Fallback analytical** — a closed-form Gaussian-mechanism bound via the
-   inverse-CDF approach (Balle et al., 2020).  Less tight than PLD but still
-   tighter than RDP for most regimes, and has zero extra dependencies.
+2. **Fallback analytical** — a GDP central-limit approximation (mu = q*sqrt(T)/sigma).
+   WARNING: this is an *asymptotic approximation*, NOT a valid tight upper bound.
+   In the low-noise / low-composition regime (small sigma, few steps) it is
+   *anti-conservative*: it can sit far BELOW the true PLD and even below what any
+   valid accountant would report (e.g. at sigma=0.5, ~211 steps it returns ~0.47
+   while the true PLD is ~5.11). It converges to true PLD only at high sigma.
+   Never report it as an upper bound; use it only as a rough diagnostic. Mislabeling
+   this fallback as "PLD" produced the invalid "93% accounting share" artifact
+   (see research/VALIDATION_2026-07-06.md).
 
 The public entry point is :func:`compute_epsilon_pld`.
 """
@@ -34,9 +40,17 @@ def compute_epsilon_pld(
     sampling_rate: float,
     num_steps: int,
     delta: float,
-    backend: str = "auto",
+    backend: str = "google",
 ) -> dict[str, Any]:
     """Compute a tight epsilon upper bound using PLD-based accounting.
+
+    ``backend`` defaults to ``"google"`` (hard default as of 2026-07-06 fix #5): if the
+    ``dp_accounting`` PLD library is unavailable this RAISES rather than silently
+    returning the anti-conservative GDP-CLT analytical approximation. Use
+    ``backend="auto"`` to opt into the (warned) fallback, or ``backend="analytical"``
+    to force the GDP-CLT approximation for diagnostic diffs only. Mislabeling the
+    analytical fallback as "PLD" is exactly what invalidated Finding 1 (see
+    research/VALIDATION_2026-07-06.md).
 
     Parameters
     ----------
@@ -80,7 +94,18 @@ def compute_epsilon_pld(
         except (ImportError, AttributeError, Exception) as e:
             if backend == "google":
                 raise
-            # Fall through to analytical
+            # Fall through to analytical -- but this is anti-conservative at low
+            # sigma and must NEVER be silently recorded as "PLD". Warn loudly.
+            import warnings
+            warnings.warn(
+                "compute_epsilon_pld: dp_accounting PLD backend unavailable "
+                f"({type(e).__name__}: {e}); falling back to the GDP-CLT analytical "
+                "approximation, which is NOT a valid tight upper bound at low sigma "
+                "(anti-conservative). Do not report this value as PLD. "
+                "See research/VALIDATION_2026-07-06.md.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
     # Analytical fallback (always available)
     eps = _compute_analytical_gaussian(

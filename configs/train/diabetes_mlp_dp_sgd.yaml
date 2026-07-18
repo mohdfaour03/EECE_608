@@ -1,0 +1,31 @@
+experiment_name: diabetes_mlp_dp_sgd
+dataset:
+  name: diabetes
+  data_dir: data/raw
+  validation_fraction: 0.1
+model:
+  name: tabular_mlp
+  input_dim: 21
+  hidden_dim: 128
+  num_classes: 2
+training:
+  batch_size: 512
+  eval_batch_size: 2048
+  epochs: 3
+  clipping_norm: 1.0
+  noise_multiplier: 1.1
+  optimizer:
+    name: sgd
+    learning_rate: 0.05
+    momentum: 0.0
+privacy:
+  delta: 1.0e-6      # < 1/N for N=253,680
+  accountant: rdp
+run:
+  split_seed: 123
+  training_seed: 123
+  training_seeds: [123, 124, 125]
+  results_root: results
+  save_checkpoint: true
+  save_debug_artifacts: true
+  notes: CDC Diabetes Health Indicators baseline (professor-requested dataset).

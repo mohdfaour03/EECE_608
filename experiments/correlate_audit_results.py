@@ -91,13 +91,15 @@ def _build_comparison(
         "utility": train_record.get("utility_metrics", {}),
     }
 
-    # Best canary result (highest epsilon_lower_empirical).
+    # Best valid canary result (highest epsilon_lower_empirical).
     if canary_audits:
-        best_canary = max(canary_audits, key=lambda r: r.get("epsilon_lower_empirical", 0.0))
+        best_canary = _select_best_valid_audit(canary_audits)
         eps_canary = best_canary.get("epsilon_lower_empirical", 0.0)
         comparison["canary_audit"] = {
             "auditor_variant": best_canary.get("auditor_variant"),
             "epsilon_lower_empirical": eps_canary,
+            "valid_empirical_lower_bound": _valid_empirical_lower_bound(best_canary),
+            "sanity_warning": best_canary.get("audit_metadata", {}).get("sanity_warning"),
             "empirical_ci_lower": best_canary.get("empirical_ci_lower"),
             "empirical_ci_upper": best_canary.get("empirical_ci_upper"),
             "privacy_loss_gap": best_canary.get("privacy_loss_gap"),
@@ -108,13 +110,15 @@ def _build_comparison(
         eps_canary = None
         comparison["canary_audit"] = None
 
-    # Best passive result.
+    # Best valid passive result.
     if passive_audits:
-        best_passive = max(passive_audits, key=lambda r: r.get("epsilon_lower_empirical", 0.0))
+        best_passive = _select_best_valid_audit(passive_audits)
         eps_passive = best_passive.get("epsilon_lower_empirical", 0.0)
         comparison["passive_audit"] = {
             "auditor_variant": best_passive.get("auditor_variant"),
             "epsilon_lower_empirical": eps_passive,
+            "valid_empirical_lower_bound": _valid_empirical_lower_bound(best_passive),
+            "sanity_warning": best_passive.get("audit_metadata", {}).get("sanity_warning"),
             "empirical_ci_lower": best_passive.get("empirical_ci_lower"),
             "empirical_ci_upper": best_passive.get("empirical_ci_upper"),
             "privacy_loss_gap": best_passive.get("privacy_loss_gap"),
@@ -211,8 +215,34 @@ def _load_json_files(directory: Path, pattern: str = "*.json") -> list[dict[str,
 
 def _load_audit_records(results_root: Path, audit_regime: str) -> list[dict[str, Any]]:
     """Load audit JSON files from the regime-specific subdirectory."""
-    audit_dir = results_root / "audits" / audit_regime
+    audit_dir = results_root / "audits" / _audit_subdirectory(audit_regime)
     return _load_json_files(audit_dir)
+
+
+def _audit_subdirectory(audit_regime: str) -> str:
+    if audit_regime == CANARY_AUDIT_REGIME:
+        return "canary"
+    if audit_regime == PASSIVE_AUDIT_REGIME:
+        return "passive"
+    raise ValueError(f"Unknown audit_regime: {audit_regime}")
+
+
+def _select_best_valid_audit(records: list[dict[str, Any]]) -> dict[str, Any]:
+    valid_records = [record for record in records if _valid_empirical_lower_bound(record)]
+    candidates = valid_records or records
+    return max(candidates, key=lambda record: record.get("epsilon_lower_empirical", 0.0))
+
+
+def _valid_empirical_lower_bound(record: dict[str, Any]) -> bool:
+    metadata = record.get("audit_metadata", {})
+    if "valid_empirical_lower_bound" in metadata:
+        return bool(metadata["valid_empirical_lower_bound"])
+
+    epsilon_upper = record.get("epsilon_upper_theory")
+    epsilon_lower = record.get("epsilon_lower_empirical")
+    if epsilon_upper is None or epsilon_lower is None:
+        return False
+    return float(epsilon_lower) <= float(epsilon_upper) + 1e-12
 
 
 def _index_by_training_run(records: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:

@@ -136,5 +136,88 @@ class EmpiricalLowerBoundTests(unittest.TestCase):
             )
 
 
+class HoldoutThresholdSelectionTests(unittest.TestCase):
+    """Tests for the sample-split holdout path (2026-07-06 fix #1)."""
+
+    KW = dict(
+        delta=1e-5,
+        align_event_to_score_direction=True,
+        require_member_favoring=True,
+        report_confidence_supported_lower_bound=True,
+        score_direction="higher",
+    )
+
+    def _est(self, m, n, ts):
+        return estimate_empirical_lower_bound(
+            member_scores=m, nonmember_scores=n, threshold_selection=ts, **self.KW
+        )
+
+    def test_null_coverage_holdout_is_zero_in_at_least_95pct(self) -> None:
+        import random
+
+        holdout_zero = 0
+        insample_nonzero = 0
+        for rep in range(200):
+            rng = random.Random(1000 + rep)
+            m = [rng.gauss(0, 1) for _ in range(640)]
+            n = [rng.gauss(0, 1) for _ in range(640)]
+            if self._est(m, n, "holdout").epsilon_lower_empirical_conservative == 0.0:
+                holdout_zero += 1
+            if self._est(m, n, "in_sample").epsilon_lower_empirical_conservative > 0.0:
+                insample_nonzero += 1
+        # Holdout must certify 0 under the null in >= 95% of reps (expect ~100%).
+        self.assertGreaterEqual(holdout_zero, 190)
+        # In-sample is anti-conservative: it can manufacture nonzero eps from noise.
+        # (Documents why the fix exists.)
+        self.assertGreaterEqual(insample_nonzero, 1)
+
+    def test_signal_holdout_positive_and_below_insample_point(self) -> None:
+        import random
+
+        rng = random.Random(7)
+        m = [rng.gauss(3, 1) for _ in range(640)]
+        n = [rng.gauss(0, 1) for _ in range(640)]
+        ho = self._est(m, n, "holdout")
+        ins = self._est(m, n, "in_sample")
+        self.assertGreater(ho.epsilon_lower_empirical_conservative, 0.0)
+        self.assertLessEqual(
+            ho.epsilon_lower_empirical_conservative,
+            ins.epsilon_lower_empirical_point_estimate,
+        )
+        self.assertEqual(ho.threshold_selection, "holdout")
+
+    def test_determinism(self) -> None:
+        import random
+
+        rng = random.Random(2)
+        m = [rng.gauss(3, 1) for _ in range(320)]
+        n = [rng.gauss(0, 1) for _ in range(320)]
+        self.assertEqual(self._est(m, n, "holdout"), self._est(m, n, "holdout"))
+
+    def test_tiny_inputs_return_conservative_zero_without_crash(self) -> None:
+        est = self._est([0.1, 0.2, 0.3], [0.0, 0.05, 0.1], "holdout")
+        self.assertEqual(est.epsilon_lower_empirical_conservative, 0.0)
+        self.assertEqual(est.estimation_method, "threshold_sweep_holdout_insufficient_samples")
+
+    def test_odd_length_inputs_do_not_crash(self) -> None:
+        import random
+
+        rng = random.Random(3)
+        m = [rng.gauss(1, 1) for _ in range(41)]
+        n = [rng.gauss(0, 1) for _ in range(37)]
+        est = self._est(m, n, "holdout")  # must not raise
+        self.assertGreaterEqual(est.epsilon_lower_empirical_conservative, 0.0)
+
+    def test_in_sample_path_is_default_and_unchanged(self) -> None:
+        import random
+
+        rng = random.Random(9)
+        m = [rng.gauss(2, 1) for _ in range(200)]
+        n = [rng.gauss(0, 1) for _ in range(200)]
+        default = estimate_empirical_lower_bound(member_scores=m, nonmember_scores=n, **self.KW)
+        self.assertEqual(default.threshold_selection, "in_sample")
+        self.assertIn("member_aligned", default.estimation_method)
+
+
 if __name__ == "__main__":
     unittest.main()

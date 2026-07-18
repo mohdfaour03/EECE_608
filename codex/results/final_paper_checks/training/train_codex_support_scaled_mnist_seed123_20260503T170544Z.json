@@ -1,0 +1,28 @@
+{
+  "batch_size": 128,
+  "clipping_norm": 1.0,
+  "config_snapshot_path": "C:\\Users\\user\\OneDrive - American University of Beirut\\Documents\\EECE_608\\codex\\results\\final_paper_checks\\training\\configs\\train_codex_support_scaled_mnist_seed123_20260503T170544Z_config.json",
+  "created_at_utc": "2026-05-03T17:05:44.209157+00:00",
+  "dataset": "mnist",
+  "delta": 1e-05,
+  "epochs": 1,
+  "epsilon_upper_pld": 1.812994,
+  "epsilon_upper_theory": 2.242196097938645,
+  "experiment_name": "codex_support_scaled_mnist",
+  "learning_rate": 0.15,
+  "model_artifact_path": "C:\\Users\\user\\OneDrive - American University of Beirut\\Documents\\EECE_608\\codex\\results\\final_paper_checks\\training\\checkpoints\\train_codex_support_scaled_mnist_seed123_20260503T170544Z.pt",
+  "model_name": "simple_mlp",
+  "noise_multiplier": 1.1,
+  "notes": "Codex support-scaled pilot sidecar run.",
+  "optimizer_name": "sgd",
+  "pld_accounting_backend": "google_dp_accounting",
+  "sampling_rate": 0.0625,
+  "split_seed": 11,
+  "training_run_id": "train_codex_support_scaled_mnist_seed123_20260503T170544Z",
+  "training_seed": 123,
+  "utility_metrics": {
+    "accuracy": 0.533203125,
+    "loss": 1.9627044796943665
+  },
+  "weight_decay": 0.0
+}

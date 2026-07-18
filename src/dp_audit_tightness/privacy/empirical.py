@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import random
 from typing import Mapping, Sequence
 
 
@@ -29,6 +30,11 @@ class EmpiricalEpsilonEstimate:
     warning_message: str | None = None
     num_member_samples: int = 0
     num_nonmember_samples: int = 0
+    # Additive fields for the opt-in sample-split holdout path (2026-07-06 fix #1).
+    # Defaults keep the dataclass backward-compatible for the in-sample path.
+    threshold_selection: str = "in_sample"
+    selection_half_sizes: tuple[int, int] | None = None
+    estimation_half_sizes: tuple[int, int] | None = None
 
 
 def estimate_empirical_lower_bound(
@@ -43,12 +49,26 @@ def estimate_empirical_lower_bound(
     report_confidence_supported_lower_bound: bool = False,
     tiny_tail_fraction_threshold: float = 0.125,
     tiny_tail_min_event_count: int = 5,
+    threshold_selection: str = "in_sample",
+    holdout_split_seed: int = 20260706,
+    holdout_fraction: float = 0.5,
 ) -> EmpiricalEpsilonEstimate:
     """Estimate an empirical lower bound on privacy loss from auditor outputs.
 
     For first-pass implementations, this uses a threshold sweep over member and
     non-member score distributions and converts the best observed hypothesis-testing
     event into a demonstrated lower bound on privacy loss.
+
+    ``threshold_selection`` controls how the reporting threshold is chosen:
+
+    - ``"in_sample"`` (default, unchanged legacy behaviour): sweep all thresholds and
+      report the Wilson lower bound at the point-maximising threshold on the SAME
+      sample. This maximises over many dependent candidates and is anti-conservative;
+      its ``epsilon_lower_empirical_conservative`` does NOT carry a 95% guarantee.
+    - ``"holdout"`` (opt-in, added 2026-07-06): sample-split. The threshold is selected
+      on a disjoint SELECTION half and certified on an untouched ESTIMATION half, so the
+      Wilson lower bound recovers valid coverage. Requires member/nonmember score lists
+      and the member-aligned path (``align_event_to_score_direction=True``).
     """
 
     if member_scores is not None and nonmember_scores is not None:
@@ -62,6 +82,9 @@ def estimate_empirical_lower_bound(
             report_confidence_supported_lower_bound=report_confidence_supported_lower_bound,
             tiny_tail_fraction_threshold=tiny_tail_fraction_threshold,
             tiny_tail_min_event_count=tiny_tail_min_event_count,
+            threshold_selection=threshold_selection,
+            holdout_split_seed=holdout_split_seed,
+            holdout_fraction=holdout_fraction,
         )
     if audit_statistics is None:
         raise ValueError("Provide either score distributions or audit_statistics.")
@@ -90,11 +113,16 @@ def _estimate_from_score_distributions(
     report_confidence_supported_lower_bound: bool,
     tiny_tail_fraction_threshold: float,
     tiny_tail_min_event_count: int,
+    threshold_selection: str = "in_sample",
+    holdout_split_seed: int = 20260706,
+    holdout_fraction: float = 0.5,
 ) -> EmpiricalEpsilonEstimate:
     member = [float(score) for score in member_scores]
     nonmember = [float(score) for score in nonmember_scores]
     if not member or not nonmember:
         raise ValueError("Member and non-member score lists must both be non-empty.")
+    if threshold_selection not in ("in_sample", "holdout"):
+        raise ValueError(f"Unsupported threshold_selection: {threshold_selection}")
 
     if score_direction == "lower":
         transformed_member = [-score for score in member]
@@ -114,6 +142,20 @@ def _estimate_from_score_distributions(
         raise ValueError("At least one score threshold is required.")
 
     if align_event_to_score_direction:
+        if threshold_selection == "holdout":
+            return _estimate_member_aligned_holdout(
+                member_scores=transformed_member,
+                nonmember_scores=transformed_nonmember,
+                delta=delta,
+                selected_event_direction=selected_event_direction,
+                threshold_transform=threshold_transform,
+                require_member_favoring=require_member_favoring,
+                report_confidence_supported_lower_bound=report_confidence_supported_lower_bound,
+                tiny_tail_fraction_threshold=tiny_tail_fraction_threshold,
+                tiny_tail_min_event_count=tiny_tail_min_event_count,
+                holdout_split_seed=holdout_split_seed,
+                holdout_fraction=holdout_fraction,
+            )
         return _estimate_member_aligned_threshold_sweep(
             member_scores=transformed_member,
             nonmember_scores=transformed_nonmember,
@@ -260,6 +302,167 @@ def _estimate_member_aligned_threshold_sweep(
         warning_message=warning_message,
         num_member_samples=len(member_scores),
         num_nonmember_samples=len(nonmember_scores),
+    )
+
+
+def _estimate_member_aligned_holdout(
+    *,
+    member_scores: Sequence[float],
+    nonmember_scores: Sequence[float],
+    delta: float,
+    selected_event_direction: str,
+    threshold_transform,
+    require_member_favoring: bool,
+    report_confidence_supported_lower_bound: bool,
+    tiny_tail_fraction_threshold: float,
+    tiny_tail_min_event_count: int,
+    holdout_split_seed: int,
+    holdout_fraction: float,
+) -> EmpiricalEpsilonEstimate:
+    """Sample-split threshold selection (2026-07-06 fix #1).
+
+    Choose the point-maximising member-favoring threshold on a disjoint SELECTION half,
+    then certify the Wilson lower bound on an untouched ESTIMATION half. Because the
+    reported threshold is fixed with respect to the estimation half, the estimation-half
+    counts are Binomial at that fixed threshold and the Wilson lower bound recovers valid
+    coverage (each rate one-sided 97.5%, joint >= 95% by union bound). Operates in
+    transformed (member-higher) score space; ``score_direction`` is handled upstream.
+    """
+    if not (0.0 < holdout_fraction < 1.0):
+        raise ValueError("holdout_fraction must be in (0, 1).")
+
+    rng = random.Random(holdout_split_seed)
+    member_shuffled = list(member_scores)
+    rng.shuffle(member_shuffled)
+    nonmember_shuffled = list(nonmember_scores)
+    rng.shuffle(nonmember_shuffled)
+
+    n_member_sel = int(len(member_shuffled) * holdout_fraction)
+    n_nonmember_sel = int(len(nonmember_shuffled) * holdout_fraction)
+    member_sel = member_shuffled[:n_member_sel]
+    member_est = member_shuffled[n_member_sel:]
+    nonmember_sel = nonmember_shuffled[:n_nonmember_sel]
+    nonmember_est = nonmember_shuffled[n_nonmember_sel:]
+
+    selection_half_sizes = (len(member_sel), len(nonmember_sel))
+    estimation_half_sizes = (len(member_est), len(nonmember_est))
+
+    def _holdout_zero(method: str, warning: str, no_event: bool = False) -> EmpiricalEpsilonEstimate:
+        return EmpiricalEpsilonEstimate(
+            epsilon_lower_empirical=0.0,
+            epsilon_lower_empirical_point_estimate=0.0,
+            epsilon_lower_empirical_conservative=0.0,
+            empirical_ci_lower=0.0,
+            empirical_ci_upper=0.0,
+            estimation_method=method,
+            delta=delta,
+            selected_threshold=None,
+            selected_event=None,
+            selected_event_direction=selected_event_direction,
+            no_member_favoring_event_found=no_event,
+            warning_message=warning,
+            num_member_samples=len(member_scores),
+            num_nonmember_samples=len(nonmember_scores),
+            threshold_selection="holdout",
+            selection_half_sizes=selection_half_sizes,
+            estimation_half_sizes=estimation_half_sizes,
+        )
+
+    # Each half needs at least 4 members and 4 non-members to be meaningful.
+    if min(len(member_sel), len(member_est), len(nonmember_sel), len(nonmember_est)) < 4:
+        return _holdout_zero(
+            "threshold_sweep_holdout_insufficient_samples",
+            "Holdout split produced a half with fewer than 4 samples; "
+            "returning a conservative zero empirical lower bound.",
+        )
+
+    # --- SELECTION half: pick the point-maximising member-favoring threshold. ---
+    selection_thresholds = sorted(set(member_sel + nonmember_sel))
+    best_point = -math.inf
+    best_threshold: float | None = None
+    for threshold in selection_thresholds:
+        member_successes = sum(score >= threshold for score in member_sel)
+        nonmember_successes = sum(score >= threshold for score in nonmember_sel)
+        candidate = _evaluate_member_aligned_threshold(
+            member_successes=member_successes,
+            member_trials=len(member_sel),
+            nonmember_successes=nonmember_successes,
+            nonmember_trials=len(nonmember_sel),
+            delta=delta,
+        )
+        if require_member_favoring and not candidate["member_favoring"]:
+            continue
+        if candidate["point"] > best_point:
+            best_point = candidate["point"]
+            best_threshold = threshold
+
+    if best_threshold is None:
+        return _holdout_zero(
+            "threshold_sweep_holdout_no_member_favoring_event",
+            "No member-favoring event found on the selection half; "
+            "returning a conservative zero empirical lower bound.",
+            no_event=True,
+        )
+
+    # --- ESTIMATION half: certify the single fixed threshold (coverage-valid). ---
+    est_member_successes = sum(score >= best_threshold for score in member_est)
+    est_nonmember_successes = sum(score >= best_threshold for score in nonmember_est)
+    certified = _evaluate_member_aligned_threshold(
+        member_successes=est_member_successes,
+        member_trials=len(member_est),
+        nonmember_successes=est_nonmember_successes,
+        nonmember_trials=len(nonmember_est),
+        delta=delta,
+    )
+
+    point_estimate = max(0.0, certified["point"])
+    conservative_estimate = max(0.0, certified["lower"])
+    selected_event_is_tiny_tail = _is_tiny_tail_event(
+        member_event_fraction=certified["tpr"],
+        nonmember_event_fraction=certified["fpr"],
+        member_event_count=est_member_successes,
+        nonmember_event_count=est_nonmember_successes,
+        member_trials=len(member_est),
+        nonmember_trials=len(nonmember_est),
+        fraction_threshold=tiny_tail_fraction_threshold,
+        min_event_count=tiny_tail_min_event_count,
+    )
+    warning_message = _compose_warning_message(
+        report_confidence_supported_lower_bound=report_confidence_supported_lower_bound,
+        point_estimate=point_estimate,
+        conservative_estimate=conservative_estimate,
+        selected_event_is_tiny_tail=selected_event_is_tiny_tail,
+        existing_warning=None,
+    )
+
+    return EmpiricalEpsilonEstimate(
+        epsilon_lower_empirical=conservative_estimate
+        if report_confidence_supported_lower_bound
+        else point_estimate,
+        epsilon_lower_empirical_point_estimate=point_estimate,
+        epsilon_lower_empirical_conservative=conservative_estimate,
+        empirical_ci_lower=max(0.0, certified["lower"]),
+        empirical_ci_upper=max(0.0, certified["upper"]),
+        estimation_method="threshold_sweep_holdout_member_aligned",
+        delta=delta,
+        selected_threshold=threshold_transform(best_threshold),
+        selected_event=selected_event_direction,
+        selected_event_direction=selected_event_direction,
+        selected_tpr=certified["tpr"],
+        selected_fpr=certified["fpr"],
+        member_event_fraction=certified["tpr"],
+        nonmember_event_fraction=certified["fpr"],
+        member_favoring=bool(certified["member_favoring"]),
+        no_member_favoring_event_found=False,
+        selected_event_is_tiny_tail=selected_event_is_tiny_tail,
+        selected_member_event_count=est_member_successes,
+        selected_nonmember_event_count=est_nonmember_successes,
+        warning_message=warning_message,
+        num_member_samples=len(member_scores),
+        num_nonmember_samples=len(nonmember_scores),
+        threshold_selection="holdout",
+        selection_half_sizes=selection_half_sizes,
+        estimation_half_sizes=estimation_half_sizes,
     )
 
 
@@ -539,3 +742,4 @@ def _compose_warning_message(
     if not warnings:
         return None
     return " ".join(warnings)
+# holdout sample-split path added 2026-07-06 (fix #1); see estimate_empirical_lower_bound.

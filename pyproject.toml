@@ -13,6 +13,7 @@ dependencies = [
   "pandas>=2.2",
   "PyYAML>=6.0",
   "matplotlib>=3.8",
+  "scipy>=1.12",
   "torch>=2.2",
   "torchvision>=0.17",
   "opacus>=1.5",
@@ -24,4 +25,3 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-

@@ -1,0 +1,17 @@
+# Per-epsilon Optuna HPO over CDC Diabetes Health Indicators.
+# Requires data/raw/cdc_diabetes.npz (see experiments/prepare_diabetes.py) and
+# a base train config (configs/train/diabetes_mlp_dp_sgd.yaml).
+base_train_config: configs/train/diabetes_mlp_dp_sgd.yaml
+target_epsilons: [0.3, 0.5, 1.0, 2.0, 4.0, 8.0]
+n_trials: 30
+sampler_seed: 20260708
+base_trial_training_seed: 910000
+study_name_prefix: hpo
+results_root: results
+search_space:
+  learning_rate_min: 0.005
+  learning_rate_max: 0.5
+  batch_sizes: [256, 512, 1024, 2048]
+  epochs_min: 1
+  epochs_max: 10
+  clipping_norms: [0.5, 1.0, 2.0, 4.0]

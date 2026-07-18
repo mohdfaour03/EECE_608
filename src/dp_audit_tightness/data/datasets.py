@@ -27,6 +27,8 @@ def load_dataset_bundle(config: DatasetConfig, split_seed: int) -> DatasetBundle
         return _load_purchase100(config, split_seed)
     if name == "adult":
         return _load_adult(config, split_seed)
+    if name in ("diabetes", "cdc_diabetes"):
+        return _load_diabetes(config, split_seed)
     raise NotImplementedError(f"Dataset not supported: {config.name}")
 
 
@@ -122,6 +124,46 @@ def _load_purchase100(config: DatasetConfig, split_seed: int) -> DatasetBundle:
 # ---------------------------------------------------------------------------
 # Adult Census Income  (UCI — policy-relevant tabular benchmark)
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# CDC Diabetes Health Indicators (BRFSS 2015 — ~253k rows, 21 features, binary)
+# Chosen per 2026-07-08 professor feedback as the additional tabular dataset;
+# large enough for shadow-model training and Wilson-supported audit budgets.
+# Build the .npz with experiments/prepare_diabetes.py (see its docstring).
+# ---------------------------------------------------------------------------
+
+def _load_diabetes(config: DatasetConfig, split_seed: int) -> DatasetBundle:
+    import torch
+    from torch.utils.data import TensorDataset, random_split
+
+    data_root = Path(config.data_dir)
+    data_path = data_root / "cdc_diabetes.npz"
+    if not data_path.exists():
+        raise FileNotFoundError(
+            f"CDC Diabetes data not found at {data_path}. Run "
+            "'python experiments/prepare_diabetes.py --csv <path-to-BRFSS2015-csv> "
+            f"--out {data_path}' first (CSV: diabetes_binary_health_indicators_BRFSS2015.csv "
+            "from UCI ML Repository id=891 or Kaggle 'alexteboul/diabetes-health-indicators-dataset')."
+        )
+    import numpy as np
+
+    data = np.load(data_path)
+    features = torch.tensor(data["features"], dtype=torch.float32)
+    labels = torch.tensor(data["labels"], dtype=torch.long)
+    full_dataset = TensorDataset(features, labels)
+    eval_size = int(len(full_dataset) * config.validation_fraction)
+    train_size = len(full_dataset) - eval_size
+    generator = torch.Generator().manual_seed(split_seed)
+    train_dataset, eval_dataset = random_split(full_dataset, [train_size, eval_size], generator=generator)
+    return DatasetBundle(
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        input_dim=int(features.shape[1]),
+        num_classes=int(labels.max().item()) + 1,
+        train_size=train_size,
+        eval_size=eval_size,
+    )
+
 
 def _load_adult(config: DatasetConfig, split_seed: int) -> DatasetBundle:
     import torch

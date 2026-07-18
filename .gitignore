@@ -33,5 +33,19 @@ Thumbs.db
 .vscode/
 .idea/
 
+# MCP config
+.mcp.json*
+.env
+
 # Misc
 zi5gdnzK
+
+# Task 0 baseline exclusions (2026-07-18): local tool state, export binaries, stray bundle copy
+.claude/
+/Auditing-Differential-Privacy-Guarantees-in-Deep-Learning.pptx
+/Auditing-Differential-Privacy-Guarantees-in-Deep-Learning.pptx.pptx
+/DP_Auditing_Presentation.pptx
+/DP_Audit_Meeting_Brief.docx
+/Mohamad_Faour_Final_Presentation.pdf
+paper/pdf_page_renders/
+notebooks/ziDAofCC

@@ -27,6 +27,7 @@ from dp_audit_tightness.config import (
 )
 from dp_audit_tightness.data.datasets import DatasetBundle, load_dataset_bundle
 from dp_audit_tightness.privacy.empirical import estimate_empirical_lower_bound
+from dp_audit_tightness.privacy.gdp_estimation import estimate_epsilon_gdp
 from dp_audit_tightness.training.dp_sgd import train_dp_sgd
 from dp_audit_tightness.utils.logging_utils import configure_logging
 from dp_audit_tightness.utils.results import save_json, save_training_result
@@ -41,7 +42,7 @@ SUMMARY_CSV = RESULTS_DIR / "raw_lira_pilot_summary.csv"
 
 QUERY_BUDGET = 512
 AUDIT_SEEDS = [401, 402, 403, 404, 405]
-K_VALUES = [8, 16]
+K_VALUES = [8, 16, 32, 64, 128, 256]
 SHADOW_SUBSET_FRACTION = 0.5
 
 
@@ -188,6 +189,78 @@ def sample_query_indices(train_size: int, eval_size: int) -> tuple[list[int], li
     return sorted(all_train_indices), sorted(all_eval_indices), per_seed_train, per_seed_eval
 
 
+def sample_query_indices_disjoint(
+    train_size: int,
+    eval_size: int,
+    partition_seed: int = 20260705,
+) -> tuple[list[int], list[int], dict[int, list[int]], dict[int, list[int]]]:
+    """Disjoint per-seed member and non-member draws (added 2026-07-05).
+
+    ``sample_query_indices`` draws each audit seed's queries independently from
+    the same pool, so the same example can appear under several audit seeds.
+    Pooled Wilson counts then double-count that example, which violates the
+    binomial independence assumption and is anti-conservative. Here each pool
+    is shuffled once and every audit seed receives its own contiguous slice,
+    so every pooled observation is a distinct example.
+
+    Requires ``len(AUDIT_SEEDS) * QUERY_BUDGET // 2`` distinct points in both
+    pools; raises ValueError otherwise instead of silently overlapping.
+    """
+    half = QUERY_BUDGET // 2
+    need = len(AUDIT_SEEDS) * half
+    if need > train_size or need > eval_size:
+        raise ValueError(
+            f"Disjoint sampling needs {need} distinct points per pool, but "
+            f"train={train_size}, eval={eval_size}. Lower QUERY_BUDGET or "
+            f"raise the pool limits."
+        )
+    rng = random.Random(partition_seed)
+    train_perm = list(range(train_size))
+    eval_perm = list(range(eval_size))
+    rng.shuffle(train_perm)
+    rng.shuffle(eval_perm)
+    per_seed_train: dict[int, list[int]] = {}
+    per_seed_eval: dict[int, list[int]] = {}
+    for position, seed in enumerate(AUDIT_SEEDS):
+        per_seed_train[seed] = sorted(train_perm[position * half : (position + 1) * half])
+        per_seed_eval[seed] = sorted(eval_perm[position * half : (position + 1) * half])
+    all_train = sorted(index for block in per_seed_train.values() for index in block)
+    all_eval = sorted(index for block in per_seed_eval.values() for index in block)
+    return all_train, all_eval, per_seed_train, per_seed_eval
+
+
+def apply_quality_flags(row: dict) -> dict:
+    """Validity gate + censoring flag (added 2026-07-05).
+
+    - ``validity``: a conservative lower bound above the tighter upper bound is
+      not a valid measurement (finite-sample over-estimation or a scoring
+      artifact); flag it so no pathological cell is ever reported as a result.
+    - ``censored``: Wilson-conservative has a detection floor (verified
+      2026-07-05: an oracle attack extracting all true leakage at eps=0.77 is
+      certified as 0 in 5/6 seeds at n=640-1280). A conservative 0 alongside a
+      positive point/GDP estimate is CONSISTENT WITH being below the estimator's
+      detection floor -- but the point estimate is almost always > 0 from noise
+      alone, so this state does NOT prove signal exists. Hence the flag value is
+      deliberately agnostic (fix #3, 2026-07-06): it means "conservative zero,
+      either below floor OR no signal", never "attack recovers 0%".
+    """
+    eps_low = row.get("epsilon_lower_conservative") or 0.0
+    eps_up = row.get("epsilon_upper_tighter")
+    row["validity"] = (
+        "invalid_exceeds_upper_bound"
+        if eps_up is not None and eps_low > eps_up
+        else "ok"
+    )
+    point = row.get("epsilon_lower_point") or 0.0
+    gdp_point = row.get("epsilon_lower_gdp_point") or 0.0
+    row["censored"] = (
+        "conservative_zero_below_floor_or_no_signal"
+        if eps_low == 0.0 and (point > 0.0 or gdp_point > 0.0)
+        else "not_censored"
+    )
+    return row
+
+
 def compute_loss_for_indices(model, dataset, indices, device, batch_size=256):
     import torch
     import torch.nn.functional as F
@@ -228,6 +301,7 @@ def estimate_conservative_with_direction(
     nonmember_scores: list[float],
     delta: float,
     score_direction: str,
+    threshold_selection: str = "holdout",
 ):
     return estimate_empirical_lower_bound(
         member_scores=member_scores,
@@ -237,6 +311,7 @@ def estimate_conservative_with_direction(
         align_event_to_score_direction=True,
         require_member_favoring=True,
         report_confidence_supported_lower_bound=True,
+        threshold_selection=threshold_selection,
     )
 
 
@@ -295,6 +370,15 @@ def train_shadow_losses(
         shadow_config.run.results_root = str(RESULTS_DIR)
         shadow_config.run.save_checkpoint = False
         shadow_config.run.notes = "Codex raw LiRA shadow model."
+        # Shadows must mimic the TARGET's training pipeline. make_train_config
+        # hardcodes noise_multiplier=1.1 / batch_size=128, which silently
+        # mismatched shadows whenever the target was trained with different
+        # values (e.g. a sigma sweep). Inherit them from the target config
+        # instead (no-op when they already match, as in the saturation run).
+        shadow_config.training.noise_multiplier = config.training.noise_multiplier
+        shadow_config.training.batch_size = config.training.batch_size
+        shadow_config.training.epochs = config.training.epochs
+        shadow_config.training.clipping_norm = config.training.clipping_norm
 
         set_global_seed(shadow_seed)
         outcome = train_dp_sgd(
@@ -334,6 +418,8 @@ def raw_lira_scores(
     shadow_eval_losses: list[list[float]],
     shadow_member_sets: list[set[int]],
     k: int,
+    match_out_counts: bool = True,
+    matching_seed: int = 20260706,
 ) -> tuple[list[float], list[float]]:
     train_pos = {index: pos for pos, index in enumerate(query_train_indices)}
     eval_pos = {index: pos for pos, index in enumerate(query_eval_indices)}
@@ -341,30 +427,64 @@ def raw_lira_scores(
     member_scores: list[float] = []
     nonmember_scores: list[float] = []
 
+    # Symmetric, target-calibrated membership statistic (fixes the prior
+    # asymmetric-scoring bug that could push eps_lower above eps_upper):
+    #
+    #     score(x) = mean(OUT-shadow loss at x) - target loss at x
+    #
+    # The SAME formula is applied to members and non-members, so the empirical
+    # estimator measures membership rather than which branch produced the score.
+    # Intuition: if the target trained on x it overfits it -> low target loss ->
+    # large positive score; a non-member's target loss matches the OUT-shadow
+    # reference -> score ~ 0. Hence members score HIGHER (score_direction="higher").
+    #
+    # OUT-shadow reference = shadows that did NOT train on x. Query points with
+    # zero OUT shadows cannot be calibrated and are SKIPPED (this also removes the
+    # small-K fallback-scale artifact). Eval points are never in any shadow's
+    # training set, so all shadows are OUT for them.
+    #
+    # OUT-COUNT MATCHING (2026-07-06 fix #2): a member's OUT-reference averages only
+    # the ~K/2 shadows that did NOT train on it, while every one of the K shadows is
+    # OUT for a non-member. Averaging K vs ~K/2 losses gives the two branches
+    # DIFFERENT reference-noise variance, so at small K the member branch has heavier
+    # tails and the estimator can manufacture TPR>FPR from variance alone. To equalise
+    # it, each non-member's reference is averaged over c shadows, where c is drawn from
+    # the empirical distribution of member OUT-counts at this K (deterministic per
+    # point via random.Random(matching_seed + pos)). Gate with match_out_counts=False
+    # to reproduce the old (biased) behaviour for diff runs.
+
+    # Pass 1: members. Collect scores and the OUT-count actually used per member.
+    member_out_counts: list[int] = []
     for seed in AUDIT_SEEDS:
         for index in per_seed_train[seed]:
             pos = train_pos[index]
-            in_losses = []
-            out_losses = []
-            for shadow_index in range(k):
-                loss_value = float(shadow_train_losses[shadow_index][pos])
-                if index in shadow_member_sets[shadow_index]:
-                    in_losses.append(loss_value)
-                else:
-                    out_losses.append(loss_value)
-            if in_losses and out_losses:
-                score = statistics.fmean(out_losses) - statistics.fmean(in_losses)
-            elif out_losses:
-                score = statistics.fmean(out_losses)
-            else:
-                score = -statistics.fmean(in_losses) if in_losses else 0.0
+            out_losses = [
+                float(shadow_train_losses[shadow_index][pos])
+                for shadow_index in range(k)
+                if index not in shadow_member_sets[shadow_index]
+            ]
+            if not out_losses:
+                # No OUT reference at this K -> cannot calibrate; skip rather than
+                # emit an off-scale fallback score.
+                continue
+            score = statistics.fmean(out_losses) - float(target_train_losses[pos])
             member_scores.append(float(score))
+            member_out_counts.append(len(out_losses))
 
+    # Pass 2: non-members. Optionally match the reference OUT-count distribution.
+    for seed in AUDIT_SEEDS:
         for index in per_seed_eval[seed]:
             pos = eval_pos[index]
-            shadow_losses = [float(shadow_eval_losses[shadow_index][pos]) for shadow_index in range(k)]
-            shadow_mean = statistics.fmean(shadow_losses) if shadow_losses else 0.0
-            score = shadow_mean - float(target_eval_losses[pos])
+            all_out = [float(shadow_eval_losses[shadow_index][pos]) for shadow_index in range(k)]
+            if not all_out:
+                continue
+            if match_out_counts and member_out_counts:
+                rng = random.Random(matching_seed + pos)
+                c = min(rng.choice(member_out_counts), len(all_out))
+                reference = rng.sample(all_out, c)
+            else:
+                reference = all_out
+            score = statistics.fmean(reference) - float(target_eval_losses[pos])
             nonmember_scores.append(float(score))
 
     return member_scores, nonmember_scores
@@ -401,15 +521,46 @@ def build_result_row(
     nonmember_scores: list[float],
     score_direction: str = "higher",
 ) -> dict:
+    # Primary: sample-split holdout (2026-07-06 fix #1) -> valid 95% conservative bound.
     estimate = estimate_conservative_with_direction(
         member_scores=member_scores,
         nonmember_scores=nonmember_scores,
         delta=training_case["config"].privacy.delta,
         score_direction=score_direction,
+        threshold_selection="holdout",
+    )
+    # Diagnostic only: the old in-sample (anti-conservative) bound, kept so old and new
+    # tables diff cleanly. Never quote this as a valid bound.
+    estimate_insample = estimate_conservative_with_direction(
+        member_scores=member_scores,
+        nonmember_scores=nonmember_scores,
+        delta=training_case["config"].privacy.delta,
+        score_direction=score_direction,
+        threshold_selection="in_sample",
     )
     record = training_case["record"]
     epsilon_upper_tighter = record.epsilon_upper_pld
     epsilon_lower = estimate.epsilon_lower_empirical
+
+    # GDP estimation (AUC-based, avoids threshold selection bias)
+    gdp_est = estimate_epsilon_gdp(
+        member_scores=member_scores,
+        nonmember_scores=nonmember_scores,
+        delta=training_case["config"].privacy.delta,
+        score_direction=score_direction,
+        n_bootstrap=2000,
+    )
+    gdp_valid_lower_bound = (
+        epsilon_upper_tighter is not None
+        and gdp_est.epsilon_lower <= epsilon_upper_tighter
+    )
+    gdp_warning = None
+    if epsilon_upper_tighter is not None and gdp_est.epsilon_lower > epsilon_upper_tighter:
+        gdp_warning = (
+            "GDP estimate exceeds the theoretical upper bound; treat as a diagnostic "
+            "model-fit signal, not a valid empirical lower bound."
+        )
+
     return {
         "dataset": dataset_name,
         "attack": attack_name,
@@ -422,10 +573,36 @@ def build_result_row(
         "epsilon_upper_rdp": record.epsilon_upper_theory,
         "epsilon_upper_tighter": epsilon_upper_tighter,
         "tighter_upper_backend": record.pld_accounting_backend,
+        # Wilson CI results (primary = sample-split holdout; valid 95% bound)
         "epsilon_lower_conservative": epsilon_lower,
         "epsilon_lower_point": estimate.epsilon_lower_empirical_point_estimate,
+        "threshold_selection": estimate.threshold_selection,
+        "holdout_selection_half_sizes": json.dumps(estimate.selection_half_sizes),
+        "holdout_estimation_half_sizes": json.dumps(estimate.estimation_half_sizes),
+        # Diagnostic: old in-sample (anti-conservative) bound for clean diffing only.
+        "epsilon_lower_conservative_insample": estimate_insample.epsilon_lower_empirical,
+        "epsilon_lower_point_insample": estimate_insample.epsilon_lower_empirical_point_estimate,
         "tightness_ratio_tighter": (epsilon_lower / epsilon_upper_tighter) if epsilon_upper_tighter else None,
         "privacy_loss_gap_tighter": (epsilon_upper_tighter - epsilon_lower) if epsilon_upper_tighter is not None else None,
+        # GDP results
+        "epsilon_lower_gdp": gdp_est.epsilon_lower,
+        "epsilon_lower_gdp_point": gdp_est.epsilon_lower_point,
+        "gdp_valid_lower_bound": gdp_valid_lower_bound,
+        "gdp_warning": gdp_warning,
+        "tightness_ratio_gdp": (
+            (gdp_est.epsilon_lower / epsilon_upper_tighter)
+            if gdp_valid_lower_bound and gdp_est.epsilon_lower > 0
+            else 0.0
+        ),
+        "tightness_ratio_gdp_point": (
+            (gdp_est.epsilon_lower_point / epsilon_upper_tighter)
+            if gdp_valid_lower_bound and gdp_est.epsilon_lower_point > 0
+            else 0.0
+        ),
+        "gdp_auc": gdp_est.auc,
+        "gdp_mu_point": gdp_est.mu_point,
+        "gdp_mu_ci_lower": gdp_est.mu_ci_lower,
+        # Shared
         "selected_tpr": estimate.selected_tpr,
         "selected_fpr": estimate.selected_fpr,
         "warning": estimate.warning_message,
@@ -486,7 +663,9 @@ def main() -> None:
                 training_seed=123,
             ),
             "train_limit": 2048,
-            "eval_limit": 512,
+            # Fix #4: disjoint sampler needs len(AUDIT_SEEDS)*QUERY_BUDGET//2 = 1280
+            # distinct points in BOTH train and eval; raise eval_limit above that.
+            "eval_limit": 1536,
         },
         {
             "name": "cifar10",
@@ -501,8 +680,8 @@ def main() -> None:
                 momentum=0.9,
                 training_seed=123,
             ),
-            "train_limit": 1024,
-            "eval_limit": 256,
+            "train_limit": 1536,
+            "eval_limit": 1536,
         },
         {
             "name": "adult",
@@ -518,7 +697,7 @@ def main() -> None:
                 training_seed=123,
             ),
             "train_limit": 4096,
-            "eval_limit": 1024,
+            "eval_limit": 1536,
         },
     ]
 
@@ -555,7 +734,10 @@ def main() -> None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             target_model = load_model_for_inference(config.model, training_case["record"].model_artifact_path, device=device)
 
-            query_train_indices, query_eval_indices, per_seed_train, per_seed_eval = sample_query_indices(
+            # Fix #4 (2026-07-06): use the DISJOINT sampler so per-seed query slices do
+            # not overlap. The old sample_query_indices drew each seed independently,
+            # so pooled Wilson counts double-counted shared points (anti-conservative).
+            query_train_indices, query_eval_indices, per_seed_train, per_seed_eval = sample_query_indices_disjoint(
                 train_size=len(bundle.train_dataset),
                 eval_size=len(bundle.eval_dataset),
             )
@@ -646,7 +828,8 @@ def main() -> None:
                         training_case=training_case,
                         member_scores=raw_member_scores,
                         nonmember_scores=raw_nonmember_scores,
-                        score_direction="lower",
+                        # Corrected symmetric LiRA scores members HIGHER.
+                        score_direction="higher",
                     )
                     summary.append(row)
                     logger.info(

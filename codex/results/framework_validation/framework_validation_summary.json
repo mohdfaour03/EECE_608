@@ -1,0 +1,926 @@
+{
+  "scope": "canonical full-framework validation pass",
+  "training_rows": [
+    {
+      "dataset": "mnist",
+      "status": "ok",
+      "train_size": 2048,
+      "eval_size": 512,
+      "epsilon_upper_rdp": 2.242196097938645,
+      "epsilon_upper_tighter": 1.812994,
+      "upper_bound_backend": "google_dp_accounting",
+      "accuracy": 0.533203125,
+      "loss": 1.9627044796943665,
+      "training_elapsed_seconds": 2.736,
+      "training_result_path": "C:\\Users\\user\\OneDrive - American University of Beirut\\Documents\\EECE_608\\codex\\results\\framework_validation\\training\\train_codex_support_scaled_mnist_seed123_20260412T115015Z.json",
+      "training_run_id": "train_codex_support_scaled_mnist_seed123_20260412T115015Z"
+    },
+    {
+      "dataset": "cifar10",
+      "status": "ok",
+      "train_size": 1024,
+      "eval_size": 256,
+      "epsilon_upper_rdp": 3.1517415970441944,
+      "epsilon_upper_tighter": 2.635023,
+      "upper_bound_backend": "google_dp_accounting",
+      "accuracy": 0.15625,
+      "loss": 2.2807748317718506,
+      "training_elapsed_seconds": 5.056,
+      "training_result_path": "C:\\Users\\user\\OneDrive - American University of Beirut\\Documents\\EECE_608\\codex\\results\\framework_validation\\training\\train_codex_support_scaled_cifar10_seed123_20260412T115106Z.json",
+      "training_run_id": "train_codex_support_scaled_cifar10_seed123_20260412T115106Z"
+    },
+    {
+      "dataset": "adult",
+      "status": "ok",
+      "train_size": 4096,
+      "eval_size": 1024,
+      "epsilon_upper_rdp": 1.5705347535204655,
+      "epsilon_upper_tighter": 1.187876,
+      "upper_bound_backend": "google_dp_accounting",
+      "accuracy": 0.251953125,
+      "loss": 42.59007549285889,
+      "training_elapsed_seconds": 1.804,
+      "training_result_path": "C:\\Users\\user\\OneDrive - American University of Beirut\\Documents\\EECE_608\\codex\\results\\framework_validation\\training\\train_codex_support_scaled_adult_seed123_20260412T115233Z.json",
+      "training_run_id": "train_codex_support_scaled_adult_seed123_20260412T115233Z"
+    }
+  ],
+  "audit_rows": [
+    {
+      "dataset": "mnist",
+      "attack_name": "passive_negative_loss",
+      "attack_family": "passive_threshold",
+      "status": "ok",
+      "validation_status": "executed",
+      "expected_limitation": false,
+      "score_name": "negative_loss",
+      "score_direction": "higher_is_member",
+      "upper_bound_backend": "google_dp_accounting",
+      "epsilon_upper_rdp": 2.242196097938645,
+      "epsilon_upper_tighter": 1.812994,
+      "epsilon_lower_conservative": 0.0,
+      "epsilon_lower_point": 0.32691519247598744,
+      "selected_tpr": 0.03359375,
+      "selected_fpr": 0.02421875,
+      "num_member_samples": 1280,
+      "num_nonmember_samples": 1280,
+      "query_budget_per_seed": 512,
+      "num_audit_seeds": 5,
+      "audit_seeds": "[401, 402, 403, 404, 405]",
+      "k_shadows": null,
+      "num_canaries_per_seed": null,
+      "mean_inserted_example_count": null,
+      "warning": "Selected threshold lies in a sparse tail region. Reported empirical lower bound uses the confidence-supported lower side rather than the optimistic point estimate.",
+      "diagnostic_tags": [
+        "finite_sample_limited_signal",
+        "high_support",
+        "sparse_tail"
+      ],
+      "result_trust": "exploratory"
+    },
+    {
+      "dataset": "mnist",
+      "attack_name": "canary_random",
+      "attack_family": "active_canary",
+      "status": "ok",
+      "validation_status": "executed",
+      "expected_limitation": false,
+      "score_name": "target_label_logit_margin",
+      "score_direction": "higher_is_member",
+      "upper_bound_backend": "google_dp_accounting",
+      "epsilon_upper_rdp": 2.1734953818025433,
+      "epsilon_upper_tighter": 1.8391829999999998,
+      "epsilon_lower_conservative": 0.0,
+      "epsilon_lower_point": 0.6926470555182631,
+      "selected_tpr": 0.02,
+      "selected_fpr": 0.0,
+      "num_member_samples": 50,
+      "num_nonmember_samples": 50,
+      "query_budget_per_seed": null,
+      "num_audit_seeds": 5,
+      "audit_seeds": "[101, 102, 103, 104, 105]",
+      "k_shadows": null,
+      "num_canaries_per_seed": 32,
+      "mean_inserted_example_count": 10.0,
+      "warning": "Selected threshold lies in a sparse tail region. Reported empirical lower bound uses the confidence-supported lower side rather than the optimistic point estimate.",
+      "diagnostic_tags": [
+        "active_stress_test",
+        "extreme_tail_threshold",
+        "finite_sample_limited_signal",
+        "low_support",
+        "sparse_tail",
+        "zero_fpr_threshold"
+      ],
+      "result_trust": "exploratory"
+    },
+    {
+      "dataset": "mnist",
+      "attack_name": "passive_negative_loss_matched",
+      "attack_family": "passive_threshold",
+      "status": "ok",
+      "validation_status": "executed",
+      "expected_limitation": false,
+      "score_name": "negative_loss",
+      "score_direction": "higher_is_member",
+      "upper_bound_backend": "google_dp_accounting",
+      "epsilon_upper_rdp": 2.242196097938645,
+      "epsilon_upper_tighter": 1.812994,
+      "epsilon_lower_conservative": 0.0,
+      "epsilon_lower_point": 0.32691519247598744,
+      "selected_tpr": 0.03359375,
+      "selected_fpr": 0.02421875,
+      "num_member_samples": 1280,
+      "num_nonmember_samples": 1280,
+      "query_budget_per_seed": 512,
+      "num_audit_seeds": 5,
+      "audit_seeds": "[401, 402, 403, 404, 405]",
+      "k_shadows": 16,
+      "num_canaries_per_seed": null,
+      "mean_inserted_example_count": null,
+      "warning": "Selected threshold lies in a sparse tail region. Reported empirical lower bound uses the confidence-supported lower side rather than the optimistic point estimate.",
+      "diagnostic_tags": [
+        "finite_sample_limited_signal",
+        "high_support",
+        "sparse_tail"
+      ],
+      "result_trust": "exploratory"
+    },
+    {
+      "dataset": "mnist",
+      "attack_name": "passive_raw_lira",
+      "attack_family": "passive_lira",
+      "status": "ok",
+      "validation_status": "executed",
+      "expected_limitation": false,
+      "score_name": "raw_lira_score",
+      "score_direction": "lower_is_member",
+      "upper_bound_backend": "google_dp_accounting",
+      "epsilon_upper_rdp": 2.242196097938645,
+      "epsilon_upper_tighter": 1.812994,
+      "epsilon_lower_conservative": 0.8940241873713228,
+      "epsilon_lower_point": 1.0416499057296462,
+      "selected_tpr": 0.61328125,
+      "selected_fpr": 0.21640625,
+      "num_member_samples": 1280,
+      "num_nonmember_samples": 1280,
+      "query_budget_per_seed": 512,
+      "num_audit_seeds": 5,
+      "audit_seeds": "[401, 402, 403, 404, 405]",
+      "k_shadows": 16,
+      "num_canaries_per_seed": null,
+      "mean_inserted_example_count": null,
+      "warning": "Reported empirical lower bound uses the confidence-supported lower side rather than the optimistic point estimate.",
+      "diagnostic_tags": [
+        "high_support",
+        "score_direction_sensitive"
+      ],
+      "result_trust": "provisional"
+    },
+    {
+      "dataset": "cifar10",
+      "attack_name": "passive_negative_loss",
+      "attack_family": "passive_threshold",
+      "status": "ok",
+      "validation_status": "executed",
+      "expected_limitation": false,
+      "score_name": "negative_loss",
+      "score_direction": "higher_is_member",
+      "upper_bound_backend": "google_dp_accounting",
+      "epsilon_upper_rdp": 3.1517415970441944,
+      "epsilon_upper_tighter": 2.635023,
+      "epsilon_lower_conservative": 0.11865235102481915,
+      "epsilon_lower_point": 0.6120238892661646,
+      "selected_tpr": 0.06484375,
+      "selected_fpr": 0.03515625,
+      "num_member_samples": 1280,
+      "num_nonmember_samples": 1280,
+      "query_budget_per_seed": 512,
+      "num_audit_seeds": 5,
+      "audit_seeds": "[401, 402, 403, 404, 405]",
+      "k_shadows": null,
+      "num_canaries_per_seed": null,
+      "mean_inserted_example_count": null,
+      "warning": "Selected threshold lies in a sparse tail region. Reported empirical lower bound uses the confidence-supported lower side rather than the optimistic point estimate.",
+      "diagnostic_tags": [
+        "high_support",
+        "sparse_tail"
+      ],
+      "result_trust": "provisional"
+    },
+    {
+      "dataset": "cifar10",
+      "attack_name": "canary_random",
+      "attack_family": "active_canary",
+      "status": "ok",
+      "validation_status": "executed",
+      "expected_limitation": false,
+      "score_name": "target_label_logit_margin",
+      "score_direction": "higher_is_member",
+      "upper_bound_backend": "google_dp_accounting",
+      "epsilon_upper_rdp": 2.984197524145135,
+      "epsilon_upper_tighter": 2.726602,
+      "epsilon_lower_conservative": 0.0,
+      "epsilon_lower_point": 1.3861693533067396,
+      "selected_tpr": 0.08,
+      "selected_fpr": 0.0,
+      "num_member_samples": 25,
+      "num_nonmember_samples": 25,
+      "query_budget_per_seed": null,
+      "num_audit_seeds": 5,
+      "audit_seeds": "[101, 102, 103, 104, 105]",
+      "k_shadows": null,
+      "num_canaries_per_seed": 32,
+      "mean_inserted_example_count": 5.0,
+      "warning": "Selected threshold lies in a sparse tail region. Reported empirical lower bound uses the confidence-supported lower side rather than the optimistic point estimate.",
+      "diagnostic_tags": [
+        "active_stress_test",
+        "finite_sample_limited_signal",
+        "low_support",
+        "sparse_tail",
+        "zero_fpr_threshold"
+      ],
+      "result_trust": "exploratory"
+    },
+    {
+      "dataset": "cifar10",
+      "attack_name": "passive_negative_loss_matched",
+      "attack_family": "passive_threshold",
+      "status": "ok",
+      "validation_status": "executed",
+      "expected_limitation": false,
+      "score_name": "negative_loss",
+      "score_direction": "higher_is_member",
+      "upper_bound_backend": "google_dp_accounting",
+      "epsilon_upper_rdp": 3.1517415970441944,
+      "epsilon_upper_tighter": 2.635023,
+      "epsilon_lower_conservative": 0.11865235102481915,
+      "epsilon_lower_point": 0.6120238892661646,
+      "selected_tpr": 0.06484375,
+      "selected_fpr": 0.03515625,
+      "num_member_samples": 1280,
+      "num_nonmember_samples": 1280,
+      "query_budget_per_seed": 512,
+      "num_audit_seeds": 5,
+      "audit_seeds": "[401, 402, 403, 404, 405]",
+      "k_shadows": 16,
+      "num_canaries_per_seed": null,
+      "mean_inserted_example_count": null,
+      "warning": "Selected threshold lies in a sparse tail region. Reported empirical lower bound uses the confidence-supported lower side rather than the optimistic point estimate.",
+      "diagnostic_tags": [
+        "high_support",
+        "sparse_tail"
+      ],
+      "result_trust": "provisional"
+    },
+    {
+      "dataset": "cifar10",
+      "attack_name": "passive_raw_lira",
+      "attack_family": "passive_lira",
+      "status": "ok",
+      "validation_status": "executed",
+      "expected_limitation": false,
+      "score_name": "raw_lira_score",
+      "score_direction": "lower_is_member",
+      "upper_bound_backend": "google_dp_accounting",
+      "epsilon_upper_rdp": 3.1517415970441944,
+      "epsilon_upper_tighter": 2.635023,
+      "epsilon_lower_conservative": 0.3099507724922003,
+      "epsilon_lower_point": 0.3892637199461499,
+      "selected_tpr": 0.78984375,
+      "selected_fpr": 0.53515625,
+      "num_member_samples": 1280,
+      "num_nonmember_samples": 1280,
+      "query_budget_per_seed": 512,
+      "num_audit_seeds": 5,
+      "audit_seeds": "[401, 402, 403, 404, 405]",
+      "k_shadows": 16,
+      "num_canaries_per_seed": null,
+      "mean_inserted_example_count": null,
+      "warning": "Reported empirical lower bound uses the confidence-supported lower side rather than the optimistic point estimate.",
+      "diagnostic_tags": [
+        "high_support",
+        "score_direction_sensitive"
+      ],
+      "result_trust": "provisional"
+    },
+    {
+      "dataset": "adult",
+      "attack_name": "passive_negative_loss",
+      "attack_family": "passive_threshold",
+      "status": "ok",
+      "validation_status": "executed",
+      "expected_limitation": false,
+      "score_name": "negative_loss",
+      "score_direction": "higher_is_member",
+      "upper_bound_backend": "google_dp_accounting",
+      "epsilon_upper_rdp": 1.5705347535204655,
+      "epsilon_upper_tighter": 1.187876,
+      "epsilon_lower_conservative": 0.0,
+      "epsilon_lower_point": 0.02635896390651817,
+      "selected_tpr": 0.51015625,
+      "selected_fpr": 0.496875,
+      "num_member_samples": 1280,
+      "num_nonmember_samples": 1280,
+      "query_budget_per_seed": 512,
+      "num_audit_seeds": 5,
+      "audit_seeds": "[401, 402, 403, 404, 405]",
+      "k_shadows": null,
+      "num_canaries_per_seed": null,
+      "mean_inserted_example_count": null,
+      "warning": "Reported empirical lower bound uses the confidence-supported lower side rather than the optimistic point estimate.",
+      "diagnostic_tags": [
+        "finite_sample_limited_signal",
+        "high_support"
+      ],
+      "result_trust": "exploratory"
+    },
+    {
+      "dataset": "adult",
+      "attack_name": "canary_random",
+      "attack_family": "active_canary",
+      "status": "not_supported",
+      "validation_status": "expected_not_supported",
+      "expected_limitation": true,
+      "score_name": "target_label_logit_margin",
+      "score_direction": "higher_is_member",
+      "upper_bound_backend": null,
+      "epsilon_upper_rdp": null,
+      "epsilon_upper_tighter": null,
+      "epsilon_lower_conservative": null,
+      "epsilon_lower_point": null,
+      "selected_tpr": null,
+      "selected_fpr": null,
+      "num_member_samples": 0,
+      "num_nonmember_samples": 0,
+      "query_budget_per_seed": null,
+      "num_audit_seeds": null,
+      "audit_seeds": null,
+      "k_shadows": null,
+      "num_canaries_per_seed": null,
+      "mean_inserted_example_count": null,
+      "warning": null,
+      "diagnostic_tags": [
+        "active_stress_test",
+        "expected_capability_limit"
+      ],
+      "result_trust": "not_applicable"
+    },
+    {
+      "dataset": "adult",
+      "attack_name": "passive_negative_loss_matched",
+      "attack_family": "passive_threshold",
+      "status": "ok",
+      "validation_status": "executed",
+      "expected_limitation": false,
+      "score_name": "negative_loss",
+      "score_direction": "higher_is_member",
+      "upper_bound_backend": "google_dp_accounting",
+      "epsilon_upper_rdp": 1.5705347535204655,
+      "epsilon_upper_tighter": 1.187876,
+      "epsilon_lower_conservative": 0.0,
+      "epsilon_lower_point": 0.02635896390651817,
+      "selected_tpr": 0.51015625,
+      "selected_fpr": 0.496875,
+      "num_member_samples": 1280,
+      "num_nonmember_samples": 1280,
+      "query_budget_per_seed": 512,
+      "num_audit_seeds": 5,
+      "audit_seeds": "[401, 402, 403, 404, 405]",
+      "k_shadows": 16,
+      "num_canaries_per_seed": null,
+      "mean_inserted_example_count": null,
+      "warning": "Reported empirical lower bound uses the confidence-supported lower side rather than the optimistic point estimate.",
+      "diagnostic_tags": [
+        "finite_sample_limited_signal",
+        "high_support"
+      ],
+      "result_trust": "exploratory"
+    },
+    {
+      "dataset": "adult",
+      "attack_name": "passive_raw_lira",
+      "attack_family": "passive_lira",
+      "status": "ok",
+      "validation_status": "executed",
+      "expected_limitation": false,
+      "score_name": "raw_lira_score",
+      "score_direction": "lower_is_member",
+      "upper_bound_backend": "google_dp_accounting",
+      "epsilon_upper_rdp": 1.5705347535204655,
+      "epsilon_upper_tighter": 1.187876,
+      "epsilon_lower_conservative": 4.73419649886342,
+      "epsilon_lower_point": 6.843722656522914,
+      "selected_tpr": 0.36640625,
+      "selected_fpr": 0.0,
+      "num_member_samples": 1280,
+      "num_nonmember_samples": 1280,
+      "query_budget_per_seed": 512,
+      "num_audit_seeds": 5,
+      "audit_seeds": "[401, 402, 403, 404, 405]",
+      "k_shadows": 16,
+      "num_canaries_per_seed": null,
+      "mean_inserted_example_count": null,
+      "warning": "Selected threshold lies in a sparse tail region. Reported empirical lower bound uses the confidence-supported lower side rather than the optimistic point estimate.",
+      "diagnostic_tags": [
+        "exceeds_theoretical_upper",
+        "high_support",
+        "pathological_distribution",
+        "score_direction_sensitive",
+        "sparse_tail",
+        "zero_fpr_threshold"
+      ],
+      "result_trust": "invalidated"
+    }
+  ],
+  "checks": [
+    {
+      "check_id": "training_matrix_coverage",
+      "status": "pass",
+      "description": "All canonical datasets train successfully.",
+      "scope": "global",
+      "details": "observed_ok=['adult', 'cifar10', 'mnist'] expected=['adult', 'cifar10', 'mnist']"
+    },
+    {
+      "check_id": "upper_backend::mnist",
+      "status": "pass",
+      "description": "Exact PLD backend is active.",
+      "scope": "mnist",
+      "details": "backend=google_dp_accounting"
+    },
+    {
+      "check_id": "upper_bound_order::mnist",
+      "status": "pass",
+      "description": "Tighter upper bound is positive and no larger than the RDP upper bound.",
+      "scope": "mnist",
+      "details": "epsilon_upper_tighter=1.812994, epsilon_upper_rdp=2.242196097938645"
+    },
+    {
+      "check_id": "upper_backend::cifar10",
+      "status": "pass",
+      "description": "Exact PLD backend is active.",
+      "scope": "cifar10",
+      "details": "backend=google_dp_accounting"
+    },
+    {
+      "check_id": "upper_bound_order::cifar10",
+      "status": "pass",
+      "description": "Tighter upper bound is positive and no larger than the RDP upper bound.",
+      "scope": "cifar10",
+      "details": "epsilon_upper_tighter=2.635023, epsilon_upper_rdp=3.1517415970441944"
+    },
+    {
+      "check_id": "upper_backend::adult",
+      "status": "pass",
+      "description": "Exact PLD backend is active.",
+      "scope": "adult",
+      "details": "backend=google_dp_accounting"
+    },
+    {
+      "check_id": "upper_bound_order::adult",
+      "status": "pass",
+      "description": "Tighter upper bound is positive and no larger than the RDP upper bound.",
+      "scope": "adult",
+      "details": "epsilon_upper_tighter=1.187876, epsilon_upper_rdp=1.5705347535204655"
+    },
+    {
+      "check_id": "audit_matrix_coverage",
+      "status": "pass",
+      "description": "All canonical audit rows are present.",
+      "scope": "global",
+      "details": "observed=12 expected=12"
+    },
+    {
+      "check_id": "expected_limitation::adult::canary_random",
+      "status": "pass",
+      "description": "Unsupported capability is explicit rather than silent.",
+      "scope": "adult::canary_random",
+      "details": "status=not_supported"
+    },
+    {
+      "check_id": "score_direction::adult::passive_negative_loss",
+      "status": "pass",
+      "description": "Score direction is explicit.",
+      "scope": "adult::passive_negative_loss",
+      "details": "score_direction=higher_is_member"
+    },
+    {
+      "check_id": "sample_counts::adult::passive_negative_loss",
+      "status": "pass",
+      "description": "Sample counts are positive.",
+      "scope": "adult::passive_negative_loss",
+      "details": "num_member_samples=1280, num_nonmember_samples=1280"
+    },
+    {
+      "check_id": "lower_bound_order::adult::passive_negative_loss",
+      "status": "pass",
+      "description": "Conservative lower bound does not exceed the point estimate.",
+      "scope": "adult::passive_negative_loss",
+      "details": "epsilon_lower_conservative=0.0, epsilon_lower_point=0.02635896390651817"
+    },
+    {
+      "check_id": "rates_in_range::adult::passive_negative_loss",
+      "status": "pass",
+      "description": "Selected rates are valid probabilities.",
+      "scope": "adult::passive_negative_loss",
+      "details": "selected_tpr=0.51015625, selected_fpr=0.496875"
+    },
+    {
+      "check_id": "upper_vs_lower::adult::passive_negative_loss",
+      "status": "pass",
+      "description": "Empirical lower bound does not materially exceed the theoretical upper bound.",
+      "scope": "adult::passive_negative_loss",
+      "details": "epsilon_lower_conservative=0.0, epsilon_upper_tighter=1.187876"
+    },
+    {
+      "check_id": "score_direction::adult::passive_negative_loss_matched",
+      "status": "pass",
+      "description": "Score direction is explicit.",
+      "scope": "adult::passive_negative_loss_matched",
+      "details": "score_direction=higher_is_member"
+    },
+    {
+      "check_id": "sample_counts::adult::passive_negative_loss_matched",
+      "status": "pass",
+      "description": "Sample counts are positive.",
+      "scope": "adult::passive_negative_loss_matched",
+      "details": "num_member_samples=1280, num_nonmember_samples=1280"
+    },
+    {
+      "check_id": "lower_bound_order::adult::passive_negative_loss_matched",
+      "status": "pass",
+      "description": "Conservative lower bound does not exceed the point estimate.",
+      "scope": "adult::passive_negative_loss_matched",
+      "details": "epsilon_lower_conservative=0.0, epsilon_lower_point=0.02635896390651817"
+    },
+    {
+      "check_id": "rates_in_range::adult::passive_negative_loss_matched",
+      "status": "pass",
+      "description": "Selected rates are valid probabilities.",
+      "scope": "adult::passive_negative_loss_matched",
+      "details": "selected_tpr=0.51015625, selected_fpr=0.496875"
+    },
+    {
+      "check_id": "upper_vs_lower::adult::passive_negative_loss_matched",
+      "status": "pass",
+      "description": "Empirical lower bound does not materially exceed the theoretical upper bound.",
+      "scope": "adult::passive_negative_loss_matched",
+      "details": "epsilon_lower_conservative=0.0, epsilon_upper_tighter=1.187876"
+    },
+    {
+      "check_id": "score_direction::adult::passive_raw_lira",
+      "status": "pass",
+      "description": "Score direction is explicit.",
+      "scope": "adult::passive_raw_lira",
+      "details": "score_direction=lower_is_member"
+    },
+    {
+      "check_id": "sample_counts::adult::passive_raw_lira",
+      "status": "pass",
+      "description": "Sample counts are positive.",
+      "scope": "adult::passive_raw_lira",
+      "details": "num_member_samples=1280, num_nonmember_samples=1280"
+    },
+    {
+      "check_id": "lower_bound_order::adult::passive_raw_lira",
+      "status": "pass",
+      "description": "Conservative lower bound does not exceed the point estimate.",
+      "scope": "adult::passive_raw_lira",
+      "details": "epsilon_lower_conservative=4.73419649886342, epsilon_lower_point=6.843722656522914"
+    },
+    {
+      "check_id": "rates_in_range::adult::passive_raw_lira",
+      "status": "pass",
+      "description": "Selected rates are valid probabilities.",
+      "scope": "adult::passive_raw_lira",
+      "details": "selected_tpr=0.36640625, selected_fpr=0.0"
+    },
+    {
+      "check_id": "pathology_guard::adult::passive_raw_lira",
+      "status": "pass",
+      "description": "Empirical overshoot is caught and invalidated rather than accepted.",
+      "scope": "adult::passive_raw_lira",
+      "details": "epsilon_lower_conservative=4.73419649886342, epsilon_upper_tighter=1.187876, trust=invalidated"
+    },
+    {
+      "check_id": "score_direction::cifar10::canary_random",
+      "status": "pass",
+      "description": "Score direction is explicit.",
+      "scope": "cifar10::canary_random",
+      "details": "score_direction=higher_is_member"
+    },
+    {
+      "check_id": "sample_counts::cifar10::canary_random",
+      "status": "pass",
+      "description": "Sample counts are positive.",
+      "scope": "cifar10::canary_random",
+      "details": "num_member_samples=25, num_nonmember_samples=25"
+    },
+    {
+      "check_id": "lower_bound_order::cifar10::canary_random",
+      "status": "pass",
+      "description": "Conservative lower bound does not exceed the point estimate.",
+      "scope": "cifar10::canary_random",
+      "details": "epsilon_lower_conservative=0.0, epsilon_lower_point=1.3861693533067396"
+    },
+    {
+      "check_id": "rates_in_range::cifar10::canary_random",
+      "status": "pass",
+      "description": "Selected rates are valid probabilities.",
+      "scope": "cifar10::canary_random",
+      "details": "selected_tpr=0.08, selected_fpr=0.0"
+    },
+    {
+      "check_id": "upper_vs_lower::cifar10::canary_random",
+      "status": "pass",
+      "description": "Empirical lower bound does not materially exceed the theoretical upper bound.",
+      "scope": "cifar10::canary_random",
+      "details": "epsilon_lower_conservative=0.0, epsilon_upper_tighter=2.726602"
+    },
+    {
+      "check_id": "score_direction::cifar10::passive_negative_loss",
+      "status": "pass",
+      "description": "Score direction is explicit.",
+      "scope": "cifar10::passive_negative_loss",
+      "details": "score_direction=higher_is_member"
+    },
+    {
+      "check_id": "sample_counts::cifar10::passive_negative_loss",
+      "status": "pass",
+      "description": "Sample counts are positive.",
+      "scope": "cifar10::passive_negative_loss",
+      "details": "num_member_samples=1280, num_nonmember_samples=1280"
+    },
+    {
+      "check_id": "lower_bound_order::cifar10::passive_negative_loss",
+      "status": "pass",
+      "description": "Conservative lower bound does not exceed the point estimate.",
+      "scope": "cifar10::passive_negative_loss",
+      "details": "epsilon_lower_conservative=0.11865235102481915, epsilon_lower_point=0.6120238892661646"
+    },
+    {
+      "check_id": "rates_in_range::cifar10::passive_negative_loss",
+      "status": "pass",
+      "description": "Selected rates are valid probabilities.",
+      "scope": "cifar10::passive_negative_loss",
+      "details": "selected_tpr=0.06484375, selected_fpr=0.03515625"
+    },
+    {
+      "check_id": "upper_vs_lower::cifar10::passive_negative_loss",
+      "status": "pass",
+      "description": "Empirical lower bound does not materially exceed the theoretical upper bound.",
+      "scope": "cifar10::passive_negative_loss",
+      "details": "epsilon_lower_conservative=0.11865235102481915, epsilon_upper_tighter=2.635023"
+    },
+    {
+      "check_id": "score_direction::cifar10::passive_negative_loss_matched",
+      "status": "pass",
+      "description": "Score direction is explicit.",
+      "scope": "cifar10::passive_negative_loss_matched",
+      "details": "score_direction=higher_is_member"
+    },
+    {
+      "check_id": "sample_counts::cifar10::passive_negative_loss_matched",
+      "status": "pass",
+      "description": "Sample counts are positive.",
+      "scope": "cifar10::passive_negative_loss_matched",
+      "details": "num_member_samples=1280, num_nonmember_samples=1280"
+    },
+    {
+      "check_id": "lower_bound_order::cifar10::passive_negative_loss_matched",
+      "status": "pass",
+      "description": "Conservative lower bound does not exceed the point estimate.",
+      "scope": "cifar10::passive_negative_loss_matched",
+      "details": "epsilon_lower_conservative=0.11865235102481915, epsilon_lower_point=0.6120238892661646"
+    },
+    {
+      "check_id": "rates_in_range::cifar10::passive_negative_loss_matched",
+      "status": "pass",
+      "description": "Selected rates are valid probabilities.",
+      "scope": "cifar10::passive_negative_loss_matched",
+      "details": "selected_tpr=0.06484375, selected_fpr=0.03515625"
+    },
+    {
+      "check_id": "upper_vs_lower::cifar10::passive_negative_loss_matched",
+      "status": "pass",
+      "description": "Empirical lower bound does not materially exceed the theoretical upper bound.",
+      "scope": "cifar10::passive_negative_loss_matched",
+      "details": "epsilon_lower_conservative=0.11865235102481915, epsilon_upper_tighter=2.635023"
+    },
+    {
+      "check_id": "score_direction::cifar10::passive_raw_lira",
+      "status": "pass",
+      "description": "Score direction is explicit.",
+      "scope": "cifar10::passive_raw_lira",
+      "details": "score_direction=lower_is_member"
+    },
+    {
+      "check_id": "sample_counts::cifar10::passive_raw_lira",
+      "status": "pass",
+      "description": "Sample counts are positive.",
+      "scope": "cifar10::passive_raw_lira",
+      "details": "num_member_samples=1280, num_nonmember_samples=1280"
+    },
+    {
+      "check_id": "lower_bound_order::cifar10::passive_raw_lira",
+      "status": "pass",
+      "description": "Conservative lower bound does not exceed the point estimate.",
+      "scope": "cifar10::passive_raw_lira",
+      "details": "epsilon_lower_conservative=0.3099507724922003, epsilon_lower_point=0.3892637199461499"
+    },
+    {
+      "check_id": "rates_in_range::cifar10::passive_raw_lira",
+      "status": "pass",
+      "description": "Selected rates are valid probabilities.",
+      "scope": "cifar10::passive_raw_lira",
+      "details": "selected_tpr=0.78984375, selected_fpr=0.53515625"
+    },
+    {
+      "check_id": "upper_vs_lower::cifar10::passive_raw_lira",
+      "status": "pass",
+      "description": "Empirical lower bound does not materially exceed the theoretical upper bound.",
+      "scope": "cifar10::passive_raw_lira",
+      "details": "epsilon_lower_conservative=0.3099507724922003, epsilon_upper_tighter=2.635023"
+    },
+    {
+      "check_id": "score_direction::mnist::canary_random",
+      "status": "pass",
+      "description": "Score direction is explicit.",
+      "scope": "mnist::canary_random",
+      "details": "score_direction=higher_is_member"
+    },
+    {
+      "check_id": "sample_counts::mnist::canary_random",
+      "status": "pass",
+      "description": "Sample counts are positive.",
+      "scope": "mnist::canary_random",
+      "details": "num_member_samples=50, num_nonmember_samples=50"
+    },
+    {
+      "check_id": "lower_bound_order::mnist::canary_random",
+      "status": "pass",
+      "description": "Conservative lower bound does not exceed the point estimate.",
+      "scope": "mnist::canary_random",
+      "details": "epsilon_lower_conservative=0.0, epsilon_lower_point=0.6926470555182631"
+    },
+    {
+      "check_id": "rates_in_range::mnist::canary_random",
+      "status": "pass",
+      "description": "Selected rates are valid probabilities.",
+      "scope": "mnist::canary_random",
+      "details": "selected_tpr=0.02, selected_fpr=0.0"
+    },
+    {
+      "check_id": "upper_vs_lower::mnist::canary_random",
+      "status": "pass",
+      "description": "Empirical lower bound does not materially exceed the theoretical upper bound.",
+      "scope": "mnist::canary_random",
+      "details": "epsilon_lower_conservative=0.0, epsilon_upper_tighter=1.8391829999999998"
+    },
+    {
+      "check_id": "score_direction::mnist::passive_negative_loss",
+      "status": "pass",
+      "description": "Score direction is explicit.",
+      "scope": "mnist::passive_negative_loss",
+      "details": "score_direction=higher_is_member"
+    },
+    {
+      "check_id": "sample_counts::mnist::passive_negative_loss",
+      "status": "pass",
+      "description": "Sample counts are positive.",
+      "scope": "mnist::passive_negative_loss",
+      "details": "num_member_samples=1280, num_nonmember_samples=1280"
+    },
+    {
+      "check_id": "lower_bound_order::mnist::passive_negative_loss",
+      "status": "pass",
+      "description": "Conservative lower bound does not exceed the point estimate.",
+      "scope": "mnist::passive_negative_loss",
+      "details": "epsilon_lower_conservative=0.0, epsilon_lower_point=0.32691519247598744"
+    },
+    {
+      "check_id": "rates_in_range::mnist::passive_negative_loss",
+      "status": "pass",
+      "description": "Selected rates are valid probabilities.",
+      "scope": "mnist::passive_negative_loss",
+      "details": "selected_tpr=0.03359375, selected_fpr=0.02421875"
+    },
+    {
+      "check_id": "upper_vs_lower::mnist::passive_negative_loss",
+      "status": "pass",
+      "description": "Empirical lower bound does not materially exceed the theoretical upper bound.",
+      "scope": "mnist::passive_negative_loss",
+      "details": "epsilon_lower_conservative=0.0, epsilon_upper_tighter=1.812994"
+    },
+    {
+      "check_id": "score_direction::mnist::passive_negative_loss_matched",
+      "status": "pass",
+      "description": "Score direction is explicit.",
+      "scope": "mnist::passive_negative_loss_matched",
+      "details": "score_direction=higher_is_member"
+    },
+    {
+      "check_id": "sample_counts::mnist::passive_negative_loss_matched",
+      "status": "pass",
+      "description": "Sample counts are positive.",
+      "scope": "mnist::passive_negative_loss_matched",
+      "details": "num_member_samples=1280, num_nonmember_samples=1280"
+    },
+    {
+      "check_id": "lower_bound_order::mnist::passive_negative_loss_matched",
+      "status": "pass",
+      "description": "Conservative lower bound does not exceed the point estimate.",
+      "scope": "mnist::passive_negative_loss_matched",
+      "details": "epsilon_lower_conservative=0.0, epsilon_lower_point=0.32691519247598744"
+    },
+    {
+      "check_id": "rates_in_range::mnist::passive_negative_loss_matched",
+      "status": "pass",
+      "description": "Selected rates are valid probabilities.",
+      "scope": "mnist::passive_negative_loss_matched",
+      "details": "selected_tpr=0.03359375, selected_fpr=0.02421875"
+    },
+    {
+      "check_id": "upper_vs_lower::mnist::passive_negative_loss_matched",
+      "status": "pass",
+      "description": "Empirical lower bound does not materially exceed the theoretical upper bound.",
+      "scope": "mnist::passive_negative_loss_matched",
+      "details": "epsilon_lower_conservative=0.0, epsilon_upper_tighter=1.812994"
+    },
+    {
+      "check_id": "score_direction::mnist::passive_raw_lira",
+      "status": "pass",
+      "description": "Score direction is explicit.",
+      "scope": "mnist::passive_raw_lira",
+      "details": "score_direction=lower_is_member"
+    },
+    {
+      "check_id": "sample_counts::mnist::passive_raw_lira",
+      "status": "pass",
+      "description": "Sample counts are positive.",
+      "scope": "mnist::passive_raw_lira",
+      "details": "num_member_samples=1280, num_nonmember_samples=1280"
+    },
+    {
+      "check_id": "lower_bound_order::mnist::passive_raw_lira",
+      "status": "pass",
+      "description": "Conservative lower bound does not exceed the point estimate.",
+      "scope": "mnist::passive_raw_lira",
+      "details": "epsilon_lower_conservative=0.8940241873713228, epsilon_lower_point=1.0416499057296462"
+    },
+    {
+      "check_id": "rates_in_range::mnist::passive_raw_lira",
+      "status": "pass",
+      "description": "Selected rates are valid probabilities.",
+      "scope": "mnist::passive_raw_lira",
+      "details": "selected_tpr=0.61328125, selected_fpr=0.21640625"
+    },
+    {
+      "check_id": "upper_vs_lower::mnist::passive_raw_lira",
+      "status": "pass",
+      "description": "Empirical lower bound does not materially exceed the theoretical upper bound.",
+      "scope": "mnist::passive_raw_lira",
+      "details": "epsilon_lower_conservative=0.8940241873713228, epsilon_upper_tighter=1.812994"
+    },
+    {
+      "check_id": "baseline_consistency::mnist",
+      "status": "pass",
+      "description": "Matched negative-loss agrees with the canonical passive baseline.",
+      "scope": "mnist",
+      "details": "absolute_difference=0.0"
+    },
+    {
+      "check_id": "baseline_consistency::cifar10",
+      "status": "pass",
+      "description": "Matched negative-loss agrees with the canonical passive baseline.",
+      "scope": "cifar10",
+      "details": "absolute_difference=0.0"
+    },
+    {
+      "check_id": "baseline_consistency::adult",
+      "status": "pass",
+      "description": "Matched negative-loss agrees with the canonical passive baseline.",
+      "scope": "adult",
+      "details": "absolute_difference=0.0"
+    },
+    {
+      "check_id": "raw_lira_not_weaker::mnist",
+      "status": "pass",
+      "description": "Raw LiRA is at least as strong as the passive baseline on the canonical image datasets.",
+      "scope": "mnist",
+      "details": "baseline=0.0, raw_lira=0.8940241873713228"
+    },
+    {
+      "check_id": "raw_lira_not_weaker::cifar10",
+      "status": "pass",
+      "description": "Raw LiRA is at least as strong as the passive baseline on the canonical image datasets.",
+      "scope": "cifar10",
+      "details": "baseline=0.11865235102481915, raw_lira=0.3099507724922003"
+    },
+    {
+      "check_id": "adult_raw_lira_flagged",
+      "status": "pass",
+      "description": "Adult Raw LiRA pathology is surfaced explicitly.",
+      "scope": "adult::passive_raw_lira",
+      "details": "trust=invalidated, tags=exceeds_theoretical_upper|high_support|pathological_distribution|score_direction_sensitive|sparse_tail|zero_fpr_threshold"
+    }
+  ]
+}

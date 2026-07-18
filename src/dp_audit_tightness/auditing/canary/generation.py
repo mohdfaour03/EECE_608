@@ -76,6 +76,97 @@ def generate_canaries(
     return canaries
 
 
+def generate_matched_canaries(
+    config: CanaryConfig,
+    seed: int,
+    *,
+    num_classes: int,
+    image_shape: tuple[int, ...] = (1, 28, 28),
+) -> list[CanaryPayload]:
+    """Generate exchangeable canary payloads (matched design).
+
+    Unlike :func:`generate_canaries`, ALL canaries are drawn i.i.d. from a
+    single distribution: same intensity, rng-driven patch position, and no
+    inserted-vs-reference asymmetry.  Membership is decided later by a random
+    split (see :func:`insert_matched_canaries_into_dataset`), mirroring the
+    randomized-inclusion design of Steinke et al. (2023).  Under the null
+    hypothesis of no memorization, inserted and held-out canary scores are
+    exchangeable by construction, so the empirical lower bound cannot be
+    inflated by appearance differences between the two groups.
+
+    ``config.num_canaries`` is interpreted as the number of canaries PER GROUP;
+    ``2 * num_canaries`` payloads are generated in total.
+    """
+    try:
+        import torch
+    except ImportError as exc:
+        raise RuntimeError("torch is required for canary generation.") from exc
+
+    rng = random.Random(seed)
+    canaries: list[CanaryPayload] = []
+    for index in range(2 * config.num_canaries):
+        target_label = rng.randrange(num_classes)
+        image, descriptor = _build_matched_canary_image(
+            strategy=config.strategy,
+            target_label=target_label,
+            seed=seed + index,
+            image_shape=image_shape,
+        )
+        image = image.to(dtype=torch.float32)
+        canaries.append(
+            CanaryPayload(
+                identifier=f"{config.strategy}_{index}",
+                target_label=target_label,
+                inserted_image=image,
+                reference_image=image,
+                descriptor=descriptor,
+            )
+        )
+    return canaries
+
+
+def insert_matched_canaries_into_dataset(
+    dataset: object,
+    canaries: list[CanaryPayload],
+    *,
+    seed: int,
+) -> CanaryInsertionResult:
+    """Randomly split matched canaries into inserted and held-out groups.
+
+    Exactly half of the (identically distributed) canaries are inserted into
+    the training set; the other half serve as held-out non-members.  The split
+    is a uniformly random permutation driven by ``seed``, so group assignment
+    is independent of canary appearance.
+    """
+    try:
+        import torch
+        from torch.utils.data import ConcatDataset, TensorDataset
+    except ImportError as exc:
+        raise RuntimeError("torch is required for canary insertion.") from exc
+
+    if len(canaries) < 2:
+        raise ValueError("Matched canary insertion requires at least two canaries.")
+
+    shuffled = list(canaries)
+    random.Random(seed).shuffle(shuffled)
+    half = len(shuffled) // 2
+    inserted_group = shuffled[:half]
+    holdout_group = shuffled[half : 2 * half]
+
+    tensor_dataset = TensorDataset(
+        torch.stack([payload.inserted_image.clone() for payload in inserted_group]),
+        torch.tensor([payload.target_label for payload in inserted_group], dtype=torch.long),
+    )
+    augmented_train_dataset = ConcatDataset([dataset, tensor_dataset])
+    return CanaryInsertionResult(
+        augmented_train_dataset=augmented_train_dataset,
+        inserted_canaries=inserted_group,
+        reference_canaries=holdout_group,
+        inserted_example_count=len(inserted_group),
+        unique_inserted_count=len(inserted_group),
+    )
+
+
 def insert_canaries_into_dataset(
     dataset: object,
     canaries: list[CanaryPayload],
@@ -117,6 +208,47 @@ def insert_canaries_into_dataset(
         reference_canaries=selected_canaries,
         inserted_example_count=inserted_example_count,
         unique_inserted_count=unique_inserted_count,
+    )
+
+
+def _build_matched_canary_image(
+    *,
+    strategy: str,
+    target_label: int,
+    seed: int,
+    image_shape: tuple[int, ...] = (1, 28, 28),
+) -> tuple[object, str]:
+    """Build a canary image from a single distribution (matched design).
+
+    Patch position is drawn uniformly at random from the rng stream (NOT a
+    deterministic function of the label), and intensity is identical for every
+    canary.  There is no inserted/reference branch: exchangeability of the two
+    groups is guaranteed because every canary is generated the same way.
+    """
+    try:
+        import torch
+    except ImportError as exc:
+        raise RuntimeError("torch is required for canary generation.") from exc
+
+    channels, height, width = image_shape
+    generator = torch.Generator().manual_seed(seed)
+    image = torch.rand((channels, height, width), generator=generator) * 0.04
+    base_strategy = strategy.removeprefix("matched_")
+    patch_size = {"random_canaries": 3, "improved_canaries": 4, "optimized_canaries": 5}.get(
+        base_strategy,
+        3,
+    )
+    intensity = {"random_canaries": 0.8, "improved_canaries": 0.95, "optimized_canaries": 1.0}.get(
+        base_strategy,
+        0.8,
+    )
+    position_rng = random.Random(seed ^ 0x5EED)
+    base_row = position_rng.randrange(2, height - patch_size - 1)
+    base_col = position_rng.randrange(2, width - patch_size - 1)
+    image[:, base_row : base_row + patch_size, base_col : base_col + patch_size] = intensity
+    return (
+        image.clamp(0.0, 1.0),
+        f"label={target_label},row={base_row},col={base_col},matched=True",
     )
 
 

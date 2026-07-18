@@ -27,6 +27,7 @@ import numpy as np
 class GDPEstimate:
     """Result of GDP-based privacy estimation."""
     epsilon_lower: float
+    epsilon_lower_point: float
     mu_lower: float
     mu_point: float
     mu_ci_lower: float
@@ -35,6 +36,7 @@ class GDPEstimate:
     auc: float = 0.0
     n_member: int = 0
     n_nonmember: int = 0
+    score_direction: str = "higher"
     warning: str | None = None
 
 
@@ -42,8 +44,9 @@ def estimate_epsilon_gdp(
     member_scores: Sequence[float],
     nonmember_scores: Sequence[float],
     delta: float,
-    n_bootstrap: int = 1000,
+    n_bootstrap: int = 2000,
     ci_level: float = 0.95,
+    score_direction: str = "higher",
 ) -> GDPEstimate:
     """Estimate epsilon lower bound using GDP framework.
 
@@ -54,7 +57,7 @@ def estimate_epsilon_gdp(
     Parameters
     ----------
     member_scores : array-like
-        Scores for members (higher = more likely member).
+        Scores for members.
     nonmember_scores : array-like
         Scores for non-members.
     delta : float
@@ -63,15 +66,27 @@ def estimate_epsilon_gdp(
         Number of bootstrap resamples for CI.
     ci_level : float
         Confidence level for bootstrap CI.
+    score_direction : str
+        "higher" if higher scores indicate membership (e.g. negative_loss),
+        "lower" if lower scores indicate membership (e.g. Raw LiRA).
+        When "lower", scores are negated before AUC computation so that
+        AUC > 0.5 indicates the attacker has signal.
     """
     m = np.array(member_scores, dtype=np.float64)
     n = np.array(nonmember_scores, dtype=np.float64)
 
+    # When lower scores indicate membership, negate so AUC works correctly
+    if score_direction == "lower":
+        m = -m
+        n = -n
+
     if len(m) < 5 or len(n) < 5:
         return GDPEstimate(
-            epsilon_lower=0.0, mu_lower=0.0, mu_point=0.0,
+            epsilon_lower=0.0, epsilon_lower_point=0.0,
+            mu_lower=0.0, mu_point=0.0,
             mu_ci_lower=0.0, delta=delta, method="gdp_auc",
             n_member=len(m), n_nonmember=len(n),
+            score_direction=score_direction,
             warning="Too few samples")
 
     # Point estimate of mu from AUC
@@ -93,9 +108,11 @@ def estimate_epsilon_gdp(
 
     # Convert mu to epsilon (use conservative CI lower bound)
     eps_conservative = _mu_to_epsilon(mu_ci_lower, delta) if mu_ci_lower > 0 else 0.0
+    eps_point = _mu_to_epsilon(mu_point, delta) if mu_point > 0 else 0.0
 
     return GDPEstimate(
         epsilon_lower=max(0.0, eps_conservative),
+        epsilon_lower_point=max(0.0, eps_point),
         mu_lower=mu_ci_lower,
         mu_point=mu_point,
         mu_ci_lower=mu_ci_lower,
@@ -104,6 +121,7 @@ def estimate_epsilon_gdp(
         auc=auc,
         n_member=len(m),
         n_nonmember=len(n),
+        score_direction=score_direction,
     )
 
 
@@ -120,8 +138,9 @@ def _compute_auc(member: np.ndarray, nonmember: np.ndarray) -> float:
     all_scores = np.concatenate([member, nonmember])
     labels = np.concatenate([np.ones(n_m), np.zeros(n_n)])
 
-    # Sort by score descending
-    order = np.argsort(-all_scores)
+    # Sort by score ascending (rank 1 = smallest, rank N = largest)
+    # Mann-Whitney formula requires ascending ranks.
+    order = np.argsort(all_scores)
     sorted_labels = labels[order]
 
     # AUC = (sum of ranks of positives - n_m*(n_m+1)/2) / (n_m * n_n)

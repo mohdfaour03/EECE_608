@@ -1,0 +1,16 @@
+\begin{table}[h]
+\caption{Final quick validation checks on MNIST. These checks are intentionally small and are used to validate framework behavior rather than to claim final scientific tightness.}
+\label{tab:final_quick_checks}
+\centering
+\begin{tabular}{@{}llrrrr@{}}
+\toprule
+\textbf{Check} & \textbf{Attack} & \textbf{Support} & $\boldsymbol{\varepsilon_{\mathrm{upper}}}$ & $\boldsymbol{\varepsilon_{\mathrm{lower}}}$ & \textbf{Tightness} \\
+\midrule
+train\_accounting\_smoke & \_\_training\_\_ & train=2048, eval=512 & 1.813 & -- & -- \\
+passive\_budget\_smoke & passive\_negative\_loss & budget\_128x2 & 1.813 & 0.000 & 0.0\% \\
+canary\_smoke & canary\_random & 16\_canaries\_x2 & 1.839 & 0.000 & 0.0\% \\
+raw\_lira\_k\_ladder & passive\_raw\_lira & K=8 & 1.813 & 0.073 & 4.0\% \\
+raw\_lira\_k\_ladder & passive\_raw\_lira & K=16 & 1.813 & 0.705 & 38.9\% \\
+\bottomrule
+\end{tabular}
+\end{table}
