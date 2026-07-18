@@ -1,0 +1,43 @@
+{
+  "dataset": {
+    "data_dir": "/content/data/raw",
+    "name": "mnist",
+    "num_workers": 0,
+    "validation_fraction": 0.1
+  },
+  "experiment_name": "codex_raw_lira_mnist",
+  "model": {
+    "hidden_dim": 64,
+    "input_dim": 784,
+    "name": "simple_mlp",
+    "num_classes": 10
+  },
+  "privacy": {
+    "accountant": "rdp",
+    "delta": 1e-05
+  },
+  "run": {
+    "notes": "Codex raw LiRA sidecar pilot.",
+    "results_root": "/content/codex/results/mnist_saturation",
+    "save_checkpoint": true,
+    "save_debug_artifacts": true,
+    "split_seed": 11,
+    "split_seeds": null,
+    "training_seed": 123,
+    "training_seeds": null
+  },
+  "training": {
+    "batch_size": 128,
+    "clipping_norm": 1.0,
+    "epochs": 1,
+    "eval_batch_size": 256,
+    "noise_multiplier": 1.1,
+    "optimizer": {
+      "learning_rate": 0.15,
+      "momentum": 0.0,
+      "name": "sgd",
+      "weight_decay": 0.0
+    },
+    "sampling_rate": null
+  }
+}

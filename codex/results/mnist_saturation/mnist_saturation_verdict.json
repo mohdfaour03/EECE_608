@@ -1,0 +1,8 @@
+{
+  "plateau_delta_threshold_nats": 0.05,
+  "last_delta_vs_prev_k": null,
+  "num_ladder_cells": 0,
+  "plateaued": null,
+  "verdict": "NO VERDICT -- fewer than 2 non-censored valid cells; cannot assess plateau",
+  "ladder": []
+}
